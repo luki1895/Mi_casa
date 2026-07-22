@@ -4,8 +4,6 @@ import MainLayout from "../layouts/MainLayout";
 
 // Pages base del sistema
 import Dashboard from "../pages/Dashboard/Dashboard";
-import Usuarios from "../pages/Usuarios/Usuarios";
-import Platos from "../pages/Platos/Platos";
 import Pedidos from "../pages/Pedidos/Pedidos";
 
 // Login independiente
@@ -25,8 +23,6 @@ function AppRouter() {
                 {/* 🔹 Sistema principal con layout */}
                 <Route element={<MainLayout />}>
                     <Route path="/dashboard" element={<Dashboard />} />
-                    <Route path="/usuarios" element={<Usuarios />} />
-                    <Route path="/platos" element={<Platos />} />
                     <Route path="/pedidos" element={<Pedidos />} />
                 </Route>
 
