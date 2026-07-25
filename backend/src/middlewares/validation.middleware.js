@@ -1,0 +1,23 @@
+import {validationResult} from "express-validator";
+
+const validar=(req,res,next)=>{
+
+const errores=validationResult(req);
+
+if(!errores.isEmpty()){
+
+return res.status(400).json({
+
+ok:false,
+
+errores:errores.array()
+
+});
+
+}
+
+next();
+
+};
+
+export default validar;

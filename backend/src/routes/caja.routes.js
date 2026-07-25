@@ -1,15 +1,13 @@
-import { Router } from "express";
+import {Router} from "express";
 
-const router = Router();
+import * as caja from "../controllers/caja.controller.js";
 
-router.get("/", (req, res) => {
+import verificarToken from "../middlewares/auth.middleware.js";
 
-    res.json({
+const router=Router();
 
-        mensaje: "Caja"
+router.get("/",verificarToken,caja.listar);
 
-    });
-
-});
+router.post("/",verificarToken,caja.registrar);
 
 export default router;

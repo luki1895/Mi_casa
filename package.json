@@ -1,0 +1,12 @@
+{
+  "name": "mi_casa",
+  "private": true,
+  "devDependencies": {
+    "concurrently": "^10.0.4"
+  },
+  "scripts": {
+    "frontend": "npm --prefix frontend run dev",
+    "backend": "npm --prefix backend run dev",
+    "dev": "concurrently \"npm run backend\" \"npm run frontend\""
+  }
+}
