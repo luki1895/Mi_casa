@@ -1,97 +1,294 @@
-function TablaClientes({
+import {
+    FaEdit,
+    FaTrash,
+    FaHistory,
+    FaUtensils,
+    FaEye
+} from "react-icons/fa";
 
-clientes
+const TablaClientes = ({
+    clientes = [],
+    editar,
+    eliminar,
+    historial,
+    pedido
+}) => {
 
-}){
+    if (clientes.length === 0) {
 
-return(
+        return (
 
-<div className="bg-white rounded-xl shadow overflow-hidden">
+            <div className="bg-white rounded-xl shadow p-10 text-center">
 
-<table className="w-full">
+                <h2 className="text-xl font-semibold text-gray-500">
 
-<thead>
+                    No existen clientes registrados
 
-<tr>
+                </h2>
 
-<th>Nombre</th>
+            </div>
 
-<th>Tipo</th>
+        );
 
-<th>Sopas</th>
+    }
 
-<th>Segundos</th>
+    return (
 
-<th>Estado</th>
+        <div className="bg-white rounded-xl shadow overflow-hidden">
 
-</tr>
+            <table className="w-full">
 
-</thead>
+                <thead className="bg-red-700 text-white">
 
-<tbody>
+                    <tr>
 
-{
+                        <th className="p-4 text-left">Cliente</th>
 
-clientes.map(cliente=>(
+                        <th>CI</th>
 
-<tr key={cliente.id}>
+                        <th>Celular</th>
 
-<td>
+                        <th>Tipo</th>
 
-{cliente.nombre}
+                        <th>Saldo</th>
 
-</td>
+                        <th>Estado</th>
 
-<td>
+                        <th>Acciones</th>
 
-{cliente.tipo}
+                    </tr>
 
-</td>
+                </thead>
 
-<td>
+                <tbody>
 
-{cliente.saldoSopas}
+                    {
 
-</td>
+                        clientes.map(cliente => (
 
-<td>
+                            <tr
+                                key={cliente.id}
+                                className="border-b hover:bg-gray-50 transition"
+                            >
 
-{cliente.saldoSegundos}
+                                <td className="p-4">
 
-</td>
+                                    <div className="flex items-center gap-4">
 
-<td>
+                                        <div className="w-12 h-12 rounded-full bg-red-700 text-white flex items-center justify-center font-bold">
 
-{
+                                            {
 
-cliente.estado
+                                                cliente.nombre?.charAt(0)
 
-?
+                                            }
 
-"Activo"
+                                            {
 
-:
+                                                cliente.apellido?.charAt(0)
 
-"Inactivo"
+                                            }
 
-}
+                                        </div>
 
-</td>
+                                        <div>
 
-</tr>
+                                            <h2 className="font-semibold">
 
-))
+                                                {
 
-}
+                                                    cliente.nombre
 
-</tbody>
+                                                }
 
-</table>
+                                                {" "}
 
-</div>
+                                                {
 
-);
+                                                    cliente.apellido
 
-}
+                                                }
+
+                                            </h2>
+
+                                            <p className="text-sm text-gray-500">
+
+                                                {
+
+                                                    cliente.correo
+
+                                                }
+
+                                            </p>
+
+                                        </div>
+
+                                    </div>
+
+                                </td>
+
+                                <td>
+
+                                    {
+
+                                        cliente.ci
+
+                                    }
+
+                                </td>
+
+                                <td>
+
+                                    {
+
+                                        cliente.telefono
+
+                                    }
+
+                                </td>
+
+                                <td>
+
+                                    {
+
+                                        cliente.tipo==="PENSIONADO"
+
+                                        ?
+
+                                        <span className="bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-sm">
+
+                                            Pensionado
+
+                                        </span>
+
+                                        :
+
+                                        <span className="bg-yellow-100 text-yellow-700 px-3 py-1 rounded-full text-sm">
+
+                                            Eventual
+
+                                        </span>
+
+                                    }
+
+                                </td>
+
+                                <td>
+
+                                    {
+
+                                        cliente.saldo
+
+                                    }
+
+                                </td>
+
+                                <td>
+
+                                    {
+
+                                        cliente.estado==="ACTIVO"
+
+                                        ?
+
+                                        <span className="bg-green-100 text-green-700 px-3 py-1 rounded-full">
+
+                                            Activo
+
+                                        </span>
+
+                                        :
+
+                                        <span className="bg-red-100 text-red-700 px-3 py-1 rounded-full">
+
+                                            Inactivo
+
+                                        </span>
+
+                                    }
+
+                                </td>
+
+                                <td>
+
+                                    <div className="flex gap-3 justify-center">
+
+                                        <button
+
+                                            onClick={()=>editar(cliente)}
+
+                                            className="text-blue-600 hover:scale-110"
+
+                                        >
+
+                                            <FaEdit/>
+
+                                        </button>
+
+                                        <button
+
+                                            onClick={()=>historial(cliente)}
+
+                                            className="text-green-600 hover:scale-110"
+
+                                        >
+
+                                            <FaHistory/>
+
+                                        </button>
+
+                                        <button
+
+                                            onClick={()=>pedido(cliente)}
+
+                                            className="text-orange-600 hover:scale-110"
+
+                                        >
+
+                                            <FaUtensils/>
+
+                                        </button>
+
+                                        <button
+
+                                            className="text-gray-600 hover:scale-110"
+
+                                        >
+
+                                            <FaEye/>
+
+                                        </button>
+
+                                        <button
+
+                                            onClick={()=>eliminar(cliente.id)}
+
+                                            className="text-red-600 hover:scale-110"
+
+                                        >
+
+                                            <FaTrash/>
+
+                                        </button>
+
+                                    </div>
+
+                                </td>
+
+                            </tr>
+
+                        ))
+
+                    }
+
+                </tbody>
+
+            </table>
+
+        </div>
+
+    );
+
+};
 
 export default TablaClientes;

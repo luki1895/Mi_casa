@@ -1,45 +1,51 @@
-function Button({
+const Button = ({
+    children,
+    variant = "primary",
+    type = "button",
+    className = "",
+    ...props
+}) => {
 
-children,
+    const styles = {
 
-onClick,
+        primary:
+            "bg-red-700 hover:bg-red-800 text-white",
 
-type="button",
+        secondary:
+            "bg-gray-700 hover:bg-gray-800 text-white",
 
-color="blue"
+        success:
+            "bg-green-600 hover:bg-green-700 text-white",
 
-}){
+        warning:
+            "bg-yellow-500 hover:bg-yellow-600 text-white",
 
-const colores={
+        danger:
+            "bg-red-600 hover:bg-red-700 text-white",
 
-blue:"bg-blue-600 hover:bg-blue-700",
+        outline:
+            "border border-red-700 text-red-700 hover:bg-red-700 hover:text-white"
 
-green:"bg-green-600 hover:bg-green-700",
+    };
 
-red:"bg-red-600 hover:bg-red-700",
+    return (
 
-gray:"bg-gray-500 hover:bg-gray-600"
+        <button
+
+            type={type}
+
+            className={`px-5 py-2 rounded-lg transition font-semibold ${styles[variant]} ${className}`}
+
+            {...props}
+
+        >
+
+            {children}
+
+        </button>
+
+    );
 
 };
-
-return(
-
-<button
-
-type={type}
-
-onClick={onClick}
-
-className={`${colores[color]} text-white px-5 py-3 rounded-lg transition`}
-
->
-
-{children}
-
-</button>
-
-);
-
-}
 
 export default Button;

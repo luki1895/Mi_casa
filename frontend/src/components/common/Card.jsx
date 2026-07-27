@@ -1,35 +1,27 @@
-function Card({
+const Card=({
 
 title,
 
 children
 
-}){
+})=>{
 
 return(
 
-<div className="bg-white rounded-xl shadow">
+<div className="bg-white rounded-xl shadow p-5">
 
-<div className="border-b p-5">
-
-<h2 className="text-xl font-semibold">
+<h2 className="font-bold text-xl mb-5">
 
 {title}
 
 </h2>
 
-</div>
-
-<div className="p-5">
-
 {children}
-
-</div>
 
 </div>
 
 );
 
-}
+};
 
 export default Card;

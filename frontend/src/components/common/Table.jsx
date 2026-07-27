@@ -1,34 +1,32 @@
-function Table({
+const Table=({
 
-headers,
+columns,
 
-children
+data
 
-}){
+})=>{
 
 return(
 
-<div className="bg-white rounded-xl shadow overflow-hidden">
-
 <table className="w-full">
 
-<thead className="bg-gray-100">
+<thead>
 
 <tr>
 
 {
 
-headers.map(header=>
+columns.map(col=>
 
 <th
 
-key={header}
+key={col.key}
 
-className="p-3"
+className="p-3 bg-gray-100 text-left"
 
 >
 
-{header}
+{col.label}
 
 </th>
 
@@ -42,16 +40,44 @@ className="p-3"
 
 <tbody>
 
-{children}
+{
+
+data.map((row,index)=>(
+
+<tr key={index}>
+
+{
+
+columns.map(col=>
+
+<td
+
+key={col.key}
+
+className="border-b p-3"
+
+>
+
+{row[col.key]}
+
+</td>
+
+)
+
+}
+
+</tr>
+
+))
+
+}
 
 </tbody>
 
 </table>
 
-</div>
-
 );
 
-}
+};
 
 export default Table;

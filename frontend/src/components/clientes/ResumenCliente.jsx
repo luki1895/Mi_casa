@@ -1,81 +1,116 @@
-function ResumenCliente({
+import {
+    FaUsers,
+    FaUserCheck,
+    FaUserClock,
+    FaClipboardList,
+    FaUtensils
+} from "react-icons/fa";
 
-clientes
+const ResumenCliente = ({ clientes = [] }) => {
 
-}){
+    const pensionados = clientes.filter(c => c.tipo === "PENSIONADO").length;
 
-const pensionados=
+    const eventuales = clientes.filter(c => c.tipo === "EVENTUAL").length;
 
-clientes.filter(
+    const activos = clientes.filter(c => c.estado === "ACTIVO").length;
 
-c=>c.tipo==="Pensionado"
+    const almuerzos = clientes.reduce((total, cliente) => {
 
-).length;
+        return total + Number(cliente.saldo || 0);
 
-const eventuales=
+    }, 0);
 
-clientes.filter(
+    const tarjetas = [
 
-c=>c.tipo==="Eventual"
+        {
+            titulo: "Clientes",
+            valor: clientes.length,
+            icono: <FaUsers />,
+            color: "bg-blue-600"
+        },
 
-).length;
+        {
+            titulo: "Pensionados",
+            valor: pensionados,
+            icono: <FaUserCheck />,
+            color: "bg-green-600"
+        },
 
-return(
+        {
+            titulo: "Eventuales",
+            valor: eventuales,
+            icono: <FaUserClock />,
+            color: "bg-orange-500"
+        },
 
-<div className="grid md:grid-cols-3 gap-5">
+        {
+            titulo: "Activos",
+            valor: activos,
+            icono: <FaClipboardList />,
+            color: "bg-purple-600"
+        },
 
-<div className="bg-white p-5 rounded-xl shadow">
+        {
+            titulo: "Almuerzos",
+            valor: almuerzos,
+            icono: <FaUtensils />,
+            color: "bg-red-700"
+        }
 
-<h3>
+    ];
 
-Total Clientes
+    return (
 
-</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-5">
 
-<h1>
+            {
 
-{clientes.length}
+                tarjetas.map((item, index) => (
 
-</h1>
+                    <div
 
-</div>
+                        key={index}
 
-<div className="bg-white p-5 rounded-xl shadow">
+                        className={`${item.color} rounded-xl text-white shadow-lg p-5`}
 
-<h3>
+                    >
 
-Pensionados
+                        <div className="flex justify-between items-center">
 
-</h3>
+                            <div>
 
-<h1>
+                                <p className="text-sm opacity-80">
 
-{pensionados}
+                                    {item.titulo}
 
-</h1>
+                                </p>
 
-</div>
+                                <h2 className="text-3xl font-bold mt-2">
 
-<div className="bg-white p-5 rounded-xl shadow">
+                                    {item.valor}
 
-<h3>
+                                </h2>
 
-Eventuales
+                            </div>
 
-</h3>
+                            <div className="text-5xl opacity-70">
 
-<h1>
+                                {item.icono}
 
-{eventuales}
+                            </div>
 
-</h1>
+                        </div>
 
-</div>
+                    </div>
 
-</div>
+                ))
 
-);
+            }
 
-}
+        </div>
+
+    );
+
+};
 
 export default ResumenCliente;

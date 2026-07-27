@@ -2,33 +2,78 @@ import { useState } from "react";
 
 import ClienteSelector from "../../components/pedidos/ClienteSelector";
 import MenuDelDia from "../../components/pedidos/MenuDelDia";
-import PedidoDetalle from "../../components/pedidos/PedidoDetalle";
+import DetallePedido from "../../components/pedidos/DetallePedido";
 import PedidoResumen from "../../components/pedidos/PedidoResumen";
 import Observaciones from "../../components/pedidos/Observaciones";
 import BotonesPedido from "../../components/pedidos/BotonesPedido";
 
-function Pedidos() {
+const menuInicial = [
+    {
+        id: 1,
+        nombre: "Silpancho",
+        categoria: "Segundo",
+        precio: 15,
+        stock: 30
+    },
+    {
+        id: 2,
+        nombre: "Fricasé",
+        categoria: "Segundo",
+        precio: 15,
+        stock: 20
+    },
+    {
+        id: 3,
+        nombre: "Sopa de Maní",
+        categoria: "Sopa",
+        precio: 8,
+        stock: 50
+    },
+    {
+        id: 4,
+        nombre: "Mocochinchi",
+        categoria: "Refresco",
+        precio: 5,
+        stock: 80
+    }
+];
 
-    const [detallePedido, setDetallePedido] = useState([]);
+export default function Pedidos() {
+
+    const [cliente, setCliente] = useState(null);
+
+    const [detalle, setDetalle] = useState([]);
+
+    const [observacion, setObservacion] = useState("");
 
     const agregarProducto = (producto) => {
 
-        const existe = detallePedido.find(
+        const existe = detalle.find(
+
             item => item.id === producto.id
+
         );
 
         if (existe) {
 
-            setDetallePedido(
+            setDetalle(
 
-                detallePedido.map(item =>
+                detalle.map(item =>
 
                     item.id === producto.id
 
                         ? {
+
                             ...item,
+
                             cantidad: item.cantidad + 1,
-                            subtotal: (item.cantidad + 1) * item.precio
+
+                            subtotal:
+
+                                (item.cantidad + 1) *
+
+                                item.precio
+
                         }
 
                         : item
@@ -37,98 +82,206 @@ function Pedidos() {
 
             );
 
-        }
-
-        else {
-
-            setDetallePedido([
-
-                ...detallePedido,
-
-                {
-                    ...producto,
-                    cantidad: 1,
-                    subtotal: producto.precio
-                }
-
-            ]);
+            return;
 
         }
+
+        setDetalle([
+
+            ...detalle,
+
+            {
+
+                ...producto,
+
+                cantidad: 1,
+
+                subtotal: producto.precio
+
+            }
+
+        ]);
 
     };
 
-    const eliminarProducto = (id) => {
+    const aumentar = (id) => {
 
-        setDetallePedido(
+        setDetalle(
 
-            detallePedido.filter(item => item.id !== id)
+            detalle.map(item =>
+
+                item.id === id
+
+                    ? {
+
+                        ...item,
+
+                        cantidad: item.cantidad + 1,
+
+                        subtotal:
+
+                            (item.cantidad + 1) *
+
+                            item.precio
+
+                    }
+
+                    : item
+
+            )
 
         );
 
     };
 
-    const limpiarPedido = () => {
+    const disminuir = (id) => {
 
-        setDetallePedido([]);
+        setDetalle(
+
+            detalle
+
+                .map(item =>
+
+                    item.id === id
+
+                        ? {
+
+                            ...item,
+
+                            cantidad: item.cantidad - 1,
+
+                            subtotal:
+
+                                (item.cantidad - 1) *
+
+                                item.precio
+
+                        }
+
+                        : item
+
+                )
+
+                .filter(item => item.cantidad > 0)
+
+        );
 
     };
 
-    const total = detallePedido.reduce(
+    const eliminar = (id) => {
 
-        (total, item) => total + item.subtotal,
+        setDetalle(
+
+            detalle.filter(
+
+                item => item.id !== id
+
+            )
+
+        );
+
+    };
+
+    const subtotal = detalle.reduce(
+
+        (total, item) =>
+
+            total + item.subtotal,
 
         0
 
     );
 
+    const descuento = 0;
+
+    const total = subtotal - descuento;
+
+    const guardarPedido = () => {
+
+        const pedido = {
+
+            cliente,
+
+            detalle,
+
+            observacion,
+
+            subtotal,
+
+            descuento,
+
+            total,
+
+            estado: "PENDIENTE"
+
+        };
+
+        console.log(pedido);
+
+        alert("Pedido registrado correctamente");
+
+    };
+
     return (
 
         <div className="space-y-6">
 
-            <h1 className="text-3xl font-bold">
+            <ClienteSelector
 
-                Registro de Pedido
+                cliente={cliente}
 
-            </h1>
+                setCliente={setCliente}
 
-            <div className="grid xl:grid-cols-2 gap-6">
+            />
 
-                <div className="space-y-6">
+            <MenuDelDia
 
-                    <ClienteSelector />
+                menu={menuInicial}
 
-                    <MenuDelDia
-                        agregarProducto={agregarProducto}
-                    />
+                agregarProducto={agregarProducto}
 
-                    <Observaciones />
+            />
 
-                </div>
+            <DetallePedido
 
-                <div className="space-y-6">
+                detalle={detalle}
 
-                    <PedidoDetalle
-                        detallePedido={detallePedido}
-                        eliminarProducto={eliminarProducto}
-                    />
+                aumentar={aumentar}
 
-                    <PedidoResumen
-                        detallePedido={detallePedido}
-                        total={total}
-                    />
+                disminuir={disminuir}
 
-                    <BotonesPedido
-                        limpiarPedido={limpiarPedido}
-                    />
+                eliminar={eliminar}
 
-                </div>
+            />
 
-            </div>
+            <Observaciones
+
+                observacion={observacion}
+
+                setObservacion={setObservacion}
+
+            />
+
+            <PedidoResumen
+
+                cliente={cliente}
+
+                subtotal={subtotal}
+
+                descuento={descuento}
+
+                total={total}
+
+            />
+
+            <BotonesPedido
+
+                guardar={guardarPedido}
+
+            />
 
         </div>
 
     );
 
 }
-
-export default Pedidos;
