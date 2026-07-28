@@ -1,7 +1,5 @@
-import {useState} from "react";
-
-import {configuracionInicial} from "../../data/configuracionMock";
-
+import { useState } from "react";
+import { configuracionInicial } from "../../data/configuracionMock";
 import DatosEmpresa from "../../components/configuracion/DatosEmpresa";
 import ConfiguracionPrecios from "../../components/configuracion/ConfiguracionPrecios";
 import ConfiguracionSistema from "../../components/configuracion/ConfiguracionSistema";
@@ -9,76 +7,27 @@ import ConfiguracionImpresion from "../../components/configuracion/Configuracion
 import ResumenConfiguracion from "../../components/configuracion/ResumenConfiguracion";
 import BotonesConfiguracion from "../../components/configuracion/BotonesConfiguracion";
 
-function Configuracion(){
+function Configuracion() {
+  const [configuracion, setConfiguracion] = useState(configuracionInicial);
 
-const[configuracion,setConfiguracion]=useState(configuracionInicial);
+  const actualizar = (campo, valor) => {
+    setConfiguracion((prev) => ({ ...prev, [campo]: valor }));
+  };
 
-const actualizar=(campo,valor)=>{
+  const restablecer = () => {
+    setConfiguracion(configuracionInicial);
+  };
 
-setConfiguracion(prev=>({
-
-...prev,
-
-[campo]:valor
-
-}));
-
-};
-
-return(
-
-<div className="space-y-6">
-
-<h1 className="text-3xl font-bold">
-
-Configuración
-
-</h1>
-
-<DatosEmpresa
-
-configuracion={configuracion}
-
-actualizar={actualizar}
-
-/>
-
-<ConfiguracionPrecios
-
-configuracion={configuracion}
-
-actualizar={actualizar}
-
-/>
-
-<ConfiguracionSistema
-
-configuracion={configuracion}
-
-actualizar={actualizar}
-
-/>
-
-<ConfiguracionImpresion
-
-configuracion={configuracion}
-
-actualizar={actualizar}
-
-/>
-
-<ResumenConfiguracion
-
-configuracion={configuracion}
-
-/>
-
-<BotonesConfiguracion/>
-
-</div>
-
-);
-
+  return (
+    <div className="space-y-6">
+      <ResumenConfiguracion configuracion={configuracion} />
+      <DatosEmpresa configuracion={configuracion} actualizar={actualizar} />
+      <ConfiguracionPrecios configuracion={configuracion} actualizar={actualizar} />
+      <ConfiguracionSistema configuracion={configuracion} actualizar={actualizar} />
+      <ConfiguracionImpresion configuracion={configuracion} />
+      <BotonesConfiguracion restablecer={restablecer} />
+    </div>
+  );
 }
 
 export default Configuracion;

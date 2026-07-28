@@ -26,9 +26,9 @@ const menuItems = [
     path: "/usuarios",
   },
   {
-    title: "Personas",
+    title: "Clientes",
     icon: FaUserFriends,
-    path: "/personas",
+    path: "/clientes",
   },
   {
     title: "Menú",
@@ -46,9 +46,9 @@ const menuItems = [
     path: "/caja",
   },
   {
-    title: "Cocina",
+    title: "Producción",
     icon: GiChefToque,
-    path: "/cocina",
+    path: "/produccion",
   },
   {
     title: "Reportes",

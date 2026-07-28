@@ -1,10 +1,12 @@
-function BotonesConfiguracion(){
+function BotonesConfiguracion({ restablecer = () => {} }){
 
 return(
 
 <div className="flex justify-end gap-4">
 
 <button
+
+onClick={restablecer}
 
 className="border rounded-lg px-6 py-3"
 

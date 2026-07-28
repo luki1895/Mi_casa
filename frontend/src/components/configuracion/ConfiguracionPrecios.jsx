@@ -16,9 +16,9 @@ const campos=[
 
 function ConfiguracionPrecios({
 
-configuracion,
+configuracion = {},
 
-actualizar
+actualizar = () => {}
 
 }){
 

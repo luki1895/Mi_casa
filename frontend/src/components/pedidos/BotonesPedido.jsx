@@ -1,4 +1,4 @@
-function BotonesPedido({ limpiarPedido }) {
+function BotonesPedido({ guardarPedido, limpiarPedido }) {
 
     return (
 
@@ -17,6 +17,8 @@ function BotonesPedido({ limpiarPedido }) {
             </button>
 
             <button
+
+                onClick={guardarPedido}
 
                 className="px-6 py-3 rounded-lg bg-blue-600 hover:bg-blue-700 text-white"
 

@@ -2,7 +2,7 @@ import { useState } from "react";
 
 import ClienteSelector from "../../components/pedidos/ClienteSelector";
 import MenuDelDia from "../../components/pedidos/MenuDelDia";
-import DetallePedido from "../../components/pedidos/DetallePedido";
+import PedidoDetalle from "../../components/pedidos/PedidoDetalle";
 import PedidoResumen from "../../components/pedidos/PedidoResumen";
 import Observaciones from "../../components/pedidos/Observaciones";
 import BotonesPedido from "../../components/pedidos/BotonesPedido";
@@ -222,6 +222,16 @@ export default function Pedidos() {
 
     };
 
+    const limpiarPedido = () => {
+
+        setCliente(null);
+
+        setDetalle([]);
+
+        setObservacion("");
+
+    };
+
     return (
 
         <div className="space-y-6">
@@ -242,15 +252,11 @@ export default function Pedidos() {
 
             />
 
-            <DetallePedido
+            <PedidoDetalle
 
-                detalle={detalle}
+                detallePedido={detalle}
 
-                aumentar={aumentar}
-
-                disminuir={disminuir}
-
-                eliminar={eliminar}
+                eliminarProducto={eliminar}
 
             />
 
@@ -264,11 +270,7 @@ export default function Pedidos() {
 
             <PedidoResumen
 
-                cliente={cliente}
-
-                subtotal={subtotal}
-
-                descuento={descuento}
+                detallePedido={detalle}
 
                 total={total}
 
@@ -276,7 +278,9 @@ export default function Pedidos() {
 
             <BotonesPedido
 
-                guardar={guardarPedido}
+                guardarPedido={guardarPedido}
+
+                limpiarPedido={limpiarPedido}
 
             />
 

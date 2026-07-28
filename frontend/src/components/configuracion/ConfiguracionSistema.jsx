@@ -1,8 +1,8 @@
 function ConfiguracionSistema({
 
-configuracion,
+configuracion = {},
 
-actualizar
+actualizar = () => {}
 
 }){
 

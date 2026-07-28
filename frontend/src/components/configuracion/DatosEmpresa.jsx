@@ -1,8 +1,8 @@
 function DatosEmpresa({
 
-configuracion,
+configuracion = {},
 
-actualizar
+actualizar = () => {}
 
 }){
 

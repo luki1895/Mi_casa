@@ -1,4 +1,4 @@
-function PedidoResumen({ detallePedido, total }) {
+function PedidoResumen({ detallePedido = [], total = 0 }) {
 
     return (
 

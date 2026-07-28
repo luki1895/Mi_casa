@@ -1,6 +1,6 @@
 function ResumenConfiguracion({
 
-configuracion
+configuracion = {}
 
 }){
 

@@ -1,8 +1,24 @@
 import { useState } from "react";
 
-function Observaciones() {
+function Observaciones({ observacion, setObservacion }) {
 
     const [texto, setTexto] = useState("");
+
+    const valor = observacion !== undefined ? observacion : texto;
+
+    const cambiarTexto = (e) => {
+
+        if (setObservacion) {
+
+            setObservacion(e.target.value);
+
+        } else {
+
+            setTexto(e.target.value);
+
+        }
+
+    };
 
     return (
 
@@ -18,9 +34,9 @@ function Observaciones() {
 
                 rows="5"
 
-                value={texto}
+                value={valor}
 
-                onChange={(e) => setTexto(e.target.value)}
+                onChange={cambiarTexto}
 
                 placeholder="Ejemplo: Sin cebolla, poco ají..."
 
