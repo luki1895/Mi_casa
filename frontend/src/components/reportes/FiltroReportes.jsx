@@ -16,7 +16,7 @@ className="border rounded-lg p-3"
 
 <button
 
-className="bg-blue-600 text-white px-6 rounded-lg"
+className="bg-[#ff3b30] text-white px-6 rounded-xl hover:bg-[#e11d48]"
 
 >
 

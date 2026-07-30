@@ -5,47 +5,25 @@ const Button = ({
     className = "",
     ...props
 }) => {
-
     const styles = {
-
-        primary:
-            "bg-red-700 hover:bg-red-800 text-white",
-
-        secondary:
-            "bg-gray-700 hover:bg-gray-800 text-white",
-
-        success:
-            "bg-green-600 hover:bg-green-700 text-white",
-
-        warning:
-            "bg-yellow-500 hover:bg-yellow-600 text-white",
-
-        danger:
-            "bg-red-600 hover:bg-red-700 text-white",
-
-        outline:
-            "border border-red-700 text-red-700 hover:bg-red-700 hover:text-white"
-
+        primary: "bg-[#ff3b30] hover:bg-[#e11d48] text-white shadow-sm hover:shadow-lg",
+        secondary: "bg-[#7c3aed] hover:bg-[#6d28d9] text-white shadow-sm hover:shadow-lg",
+        success: "bg-[#14b8a6] hover:bg-[#0f766e] text-white shadow-sm hover:shadow-lg",
+        warning: "bg-[#facc15] hover:bg-[#eab308] text-[#713f12] shadow-sm hover:shadow-lg",
+        danger: "bg-[#f43f5e] hover:bg-[#e11d48] text-white shadow-sm hover:shadow-lg",
+        outline: "border border-[#c084fc] bg-white text-[#6b21a8] hover:border-[#ff3b30] hover:text-[#ff3b30] hover:bg-[#fef2f2] shadow-sm",
+        ghost: "bg-transparent text-slate-700 hover:bg-[#fef3c7] hover:text-[#92400e]"
     };
 
     return (
-
         <button
-
             type={type}
-
-            className={`px-5 py-2 rounded-lg transition font-semibold ${styles[variant]} ${className}`}
-
+            className={`inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-semibold transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-[#ff3b30]/30 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 ${styles[variant]} ${className}`}
             {...props}
-
         >
-
             {children}
-
         </button>
-
     );
-
 };
 
 export default Button;

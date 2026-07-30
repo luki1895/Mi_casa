@@ -24,6 +24,16 @@ function Clientes() {
 
   return (
     <div className="space-y-6">
+      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+          <div>
+            <p className="text-sm font-semibold uppercase tracking-[0.2em] text-[#ff3b30]">Clientes</p>
+            <h2 className="text-2xl font-bold text-slate-900">Gestión de clientes</h2>
+          </div>
+          <p className="text-sm text-slate-500">Administra registros, filtros y estados en un solo lugar.</p>
+        </div>
+      </div>
+
       <ResumenCliente clientes={clientes} />
       <BuscadorCliente
         busqueda={busqueda}

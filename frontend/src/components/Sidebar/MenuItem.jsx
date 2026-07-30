@@ -8,8 +8,8 @@ const MenuItem = ({ icon: Icon, title, path }) => {
                 `flex items-center gap-3 px-4 py-2 rounded-lg transition-all duration-200
                 ${
                     isActive
-                        ? "bg-blue-600 text-white shadow-md"
-                        : "text-gray-700 hover:bg-gray-100"
+                        ? "bg-[#fef3c7] text-[#b45309] shadow-sm border border-[#fcd34d]"
+                        : "text-slate-700 hover:bg-[#f5f3ff]"
                 }`
             }
         >

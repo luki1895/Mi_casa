@@ -38,7 +38,7 @@ className="border rounded-lg p-3"
 
 <button
 
-className="bg-red-600 text-white rounded-lg"
+className="bg-[#ff3b30] text-white rounded-xl px-4 py-3 hover:bg-[#e11d48]"
 
 >
 

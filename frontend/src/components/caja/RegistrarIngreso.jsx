@@ -30,7 +30,7 @@ className="border rounded-lg p-3"
 
 <button
 
-className="bg-green-600 text-white rounded-lg"
+className="bg-[#14b8a6] text-white rounded-xl px-4 py-3 hover:bg-[#0f766e]"
 
 >
 

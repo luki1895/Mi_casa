@@ -18,9 +18,9 @@ const TablaClientes = ({
 
         return (
 
-            <div className="bg-white rounded-xl shadow p-10 text-center">
+            <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center shadow-sm">
 
-                <h2 className="text-xl font-semibold text-gray-500">
+                <h2 className="text-xl font-semibold text-slate-600">
 
                     No existen clientes registrados
 
@@ -34,11 +34,11 @@ const TablaClientes = ({
 
     return (
 
-        <div className="bg-white rounded-xl shadow overflow-hidden">
+        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
 
-            <table className="w-full">
+            <table className="w-full text-sm">
 
-                <thead className="bg-red-700 text-white">
+                <thead className="border-b border-[#fde68a] bg-[#fef3c7] text-[#92400e]">
 
                     <tr>
 
@@ -68,14 +68,14 @@ const TablaClientes = ({
 
                             <tr
                                 key={cliente.id}
-                                className="border-b hover:bg-gray-50 transition"
+                                className="border-b border-slate-100 transition hover:bg-slate-50"
                             >
 
                                 <td className="p-4">
 
                                     <div className="flex items-center gap-4">
 
-                                        <div className="w-12 h-12 rounded-full bg-red-700 text-white flex items-center justify-center font-bold">
+                                        <div className="flex h-12 w-12 items-center justify-center rounded-full border border-[#fde68a] bg-[#fef3c7] font-bold text-[#92400e]">
 
                                             {
 
@@ -211,13 +211,13 @@ const TablaClientes = ({
 
                                 <td>
 
-                                    <div className="flex gap-3 justify-center">
+                                    <div className="flex justify-center gap-2">
 
                                         <button
 
                                             onClick={()=>editar(cliente)}
 
-                                            className="text-blue-600 hover:scale-110"
+                                            className="rounded-full p-2 text-blue-600 transition hover:bg-blue-50 hover:scale-110"
 
                                         >
 
@@ -229,7 +229,7 @@ const TablaClientes = ({
 
                                             onClick={()=>historial(cliente)}
 
-                                            className="text-green-600 hover:scale-110"
+                                            className="rounded-full p-2 text-green-600 transition hover:bg-green-50 hover:scale-110"
 
                                         >
 
@@ -241,7 +241,7 @@ const TablaClientes = ({
 
                                             onClick={()=>pedido(cliente)}
 
-                                            className="text-orange-600 hover:scale-110"
+                                            className="rounded-full p-2 text-orange-600 transition hover:bg-orange-50 hover:scale-110"
 
                                         >
 
@@ -251,7 +251,7 @@ const TablaClientes = ({
 
                                         <button
 
-                                            className="text-gray-600 hover:scale-110"
+                                            className="rounded-full p-2 text-gray-600 transition hover:bg-slate-100 hover:scale-110"
 
                                         >
 
@@ -263,7 +263,7 @@ const TablaClientes = ({
 
                                             onClick={()=>eliminar(cliente.id)}
 
-                                            className="text-red-600 hover:scale-110"
+                                            className="rounded-full p-2 text-red-600 transition hover:bg-red-50 hover:scale-110"
 
                                         >
 

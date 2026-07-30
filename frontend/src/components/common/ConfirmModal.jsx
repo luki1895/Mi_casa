@@ -38,7 +38,7 @@ onClose={onCancel}
 
 onClick={onCancel}
 
-className="px-5 py-2 border rounded-lg"
+className="px-5 py-2 border border-slate-200 bg-white text-slate-700 rounded-xl hover:bg-[#f5f3ff]"
 
 >
 
@@ -50,7 +50,7 @@ Cancelar
 
 onClick={onConfirm}
 
-className="px-5 py-2 bg-red-600 text-white rounded-lg"
+className="px-5 py-2 bg-[#ff3b30] text-white rounded-xl hover:bg-[#e11d48]"
 
 >
 

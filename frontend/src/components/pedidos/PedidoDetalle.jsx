@@ -104,7 +104,7 @@ function PedidoDetalle({ detallePedido, eliminarProducto }) {
 
                                             onClick={() => eliminarProducto(item.id)}
 
-                                            className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded"
+                                            className="bg-[#fef3c7] text-[#92400e] border border-[#fde68a] hover:bg-[#fde68a] px-3 py-1 rounded"
 
                                         >
 

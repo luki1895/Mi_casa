@@ -1,33 +1,17 @@
-function BotonesCaja(){
+import Button from "../common/Button";
 
-return(
+function BotonesCaja() {
+    return (
+        <div className="flex flex-wrap justify-end gap-3">
+            <Button variant="outline">
+                Imprimir Cierre
+            </Button>
 
-<div className="flex justify-end gap-4">
-
-<button
-
-className="border rounded-lg px-6 py-3"
-
->
-
-Imprimir Cierre
-
-</button>
-
-<button
-
-className="bg-blue-600 text-white rounded-lg px-6 py-3"
-
->
-
-Cerrar Caja
-
-</button>
-
-</div>
-
-);
-
+            <Button variant="success">
+                Cerrar Caja
+            </Button>
+        </div>
+    );
 }
 
 export default BotonesCaja;

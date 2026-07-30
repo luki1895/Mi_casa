@@ -1,35 +1,17 @@
-function BotonesConfiguracion({ restablecer = () => {} }){
+import Button from "../common/Button";
 
-return(
+function BotonesConfiguracion({ restablecer = () => {} }) {
+    return (
+        <div className="flex flex-wrap justify-end gap-3">
+            <Button onClick={restablecer} variant="outline">
+                Restablecer
+            </Button>
 
-<div className="flex justify-end gap-4">
-
-<button
-
-onClick={restablecer}
-
-className="border rounded-lg px-6 py-3"
-
->
-
-Restablecer
-
-</button>
-
-<button
-
-className="bg-blue-600 text-white rounded-lg px-6 py-3"
-
->
-
-Guardar Configuración
-
-</button>
-
-</div>
-
-);
-
+            <Button variant="primary">
+                Guardar Configuración
+            </Button>
+        </div>
+    );
 }
 
 export default BotonesConfiguracion;

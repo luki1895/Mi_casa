@@ -1,37 +1,21 @@
+import Button from "../common/Button";
+
 function BotonesPedido({ guardarPedido, limpiarPedido }) {
-
     return (
-
-        <div className="flex justify-end gap-4">
-
-            <button
-
-                onClick={limpiarPedido}
-
-                className="px-5 py-3 rounded-lg border border-gray-400 hover:bg-gray-100"
-
-            >
-
+        <div className="flex flex-wrap justify-end gap-3">
+            <Button onClick={limpiarPedido} variant="outline">
                 Limpiar
+            </Button>
 
-            </button>
+            <Button variant="warning">
+                Reservas
+            </Button>
 
-            <button
-
-                onClick={guardarPedido}
-
-                className="px-6 py-3 rounded-lg bg-blue-600 hover:bg-blue-700 text-white"
-
-            >
-
+            <Button onClick={guardarPedido} variant="primary">
                 Registrar Pedido
-
-            </button>
-
+            </Button>
         </div>
-
     );
-
 }
 
 export default BotonesPedido;

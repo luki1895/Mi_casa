@@ -80,11 +80,13 @@ return(
 
 onSubmit={enviar}
 
-className="bg-white rounded-xl shadow-lg p-6"
+className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
 
 >
 
-<h2 className="text-2xl font-bold mb-6">
+<div className="mb-6 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+
+<h2 className="text-2xl font-bold text-slate-900">
 
 {
 
@@ -102,7 +104,27 @@ cliente
 
 </h2>
 
-<div className="grid grid-cols-2 gap-5">
+<span className="rounded-full bg-[#fef3c7] px-3 py-1 text-sm font-semibold text-[#92400e]">
+
+{
+
+cliente
+
+?
+
+"Editar cliente"
+
+:
+
+"Agregar cliente"
+
+}
+
+</span>
+
+</div>
+
+<div className="grid grid-cols-1 gap-5 md:grid-cols-2">
 
 <div>
 
@@ -120,7 +142,7 @@ value={formulario.ci}
 
 onChange={handleChange}
 
-className="w-full border rounded-lg p-3"
+className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 outline-none transition focus:border-[#ff3b30] focus:bg-white"
 
 />
 
@@ -142,7 +164,7 @@ value={formulario.nombre}
 
 onChange={handleChange}
 
-className="w-full border rounded-lg p-3"
+className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 outline-none transition focus:border-[#ff3b30] focus:bg-white"
 
 />
 
@@ -164,7 +186,7 @@ value={formulario.apellido}
 
 onChange={handleChange}
 
-className="w-full border rounded-lg p-3"
+className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 outline-none transition focus:border-[#ff3b30] focus:bg-white"
 
 />
 
@@ -186,7 +208,7 @@ value={formulario.telefono}
 
 onChange={handleChange}
 
-className="w-full border rounded-lg p-3"
+className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 outline-none transition focus:border-[#ff3b30] focus:bg-white"
 
 />
 
@@ -208,7 +230,7 @@ value={formulario.correo}
 
 onChange={handleChange}
 
-className="w-full border rounded-lg p-3"
+className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 outline-none transition focus:border-[#ff3b30] focus:bg-white"
 
 />
 
@@ -230,7 +252,7 @@ value={formulario.direccion}
 
 onChange={handleChange}
 
-className="w-full border rounded-lg p-3"
+className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 outline-none transition focus:border-[#ff3b30] focus:bg-white"
 
 />
 
@@ -252,7 +274,7 @@ value={formulario.tipo}
 
 onChange={handleChange}
 
-className="w-full border rounded-lg p-3"
+className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 outline-none transition focus:border-[#ff3b30]"
 
 >
 
@@ -288,7 +310,7 @@ value={formulario.estado}
 
 onChange={handleChange}
 
-className="w-full border rounded-lg p-3"
+className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 outline-none transition focus:border-[#ff3b30]"
 
 >
 
@@ -334,7 +356,7 @@ value={formulario.saldo}
 
 onChange={handleChange}
 
-className="w-full border rounded-lg p-3"
+className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 outline-none transition focus:border-[#ff3b30] focus:bg-white"
 
 />
 
@@ -358,7 +380,7 @@ value={formulario.fechaInicio}
 
 onChange={handleChange}
 
-className="w-full border rounded-lg p-3"
+className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 outline-none transition focus:border-[#ff3b30] focus:bg-white"
 
 />
 
@@ -382,7 +404,7 @@ value={formulario.fechaFin}
 
 onChange={handleChange}
 
-className="w-full border rounded-lg p-3"
+className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 outline-none transition focus:border-[#ff3b30] focus:bg-white"
 
 />
 
@@ -392,7 +414,7 @@ className="w-full border rounded-lg p-3"
 
 }
 
-<div className="col-span-2">
+<div className="md:col-span-2">
 
 <label>
 
@@ -410,7 +432,7 @@ value={formulario.observacion}
 
 onChange={handleChange}
 
-className="w-full border rounded-lg p-3"
+className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 outline-none transition focus:border-[#ff3b30] focus:bg-white"
 
 />
 
@@ -426,7 +448,7 @@ type="button"
 
 onClick={cancelar}
 
-className="bg-gray-600 text-white px-5 py-3 rounded-lg"
+className="bg-slate-100 text-slate-700 border border-slate-200 px-5 py-3 rounded-xl hover:bg-[#fef3c7]"
 
 >
 
@@ -438,7 +460,7 @@ Cancelar
 
 type="submit"
 
-className="bg-red-700 text-white px-5 py-3 rounded-lg"
+className="bg-[#ff3b30] text-white px-5 py-3 rounded-xl hover:bg-[#e11d48]"
 
 >
 
