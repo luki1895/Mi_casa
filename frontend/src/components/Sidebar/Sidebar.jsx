@@ -4,37 +4,28 @@ import MenuItem from "./MenuItem";
 
 const Sidebar = () => {
   return (
-    <aside className="h-screen w-64 bg-white shadow-lg flex flex-col">
-
-      {/* HEADER / LOGO */}
-      <div className="p-5 border-b">
-        <h1 className="text-xl font-bold text-gray-800">
-          🍽 Sistema Restaurante
-        </h1>
-        <p className="text-sm text-gray-500">
-          Panel administrativo
-        </p>
+    <aside className="flex h-screen w-72 flex-col border-r border-slate-200 bg-slate-900 text-slate-100 shadow-2xl" style={{ background: "var(--sidebar-color)" }}>
+      <div className="border-b border-slate-700 p-5">
+        <div className="flex items-center gap-3">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl text-xl font-black text-white shadow-lg" style={{ background: "linear-gradient(135deg, var(--secondary-color), var(--primary-color))" }}>
+            MC
+          </div>
+          <div>
+            <h1 className="text-lg font-black tracking-wide text-white">Mi Casa</h1>
+            <p className="text-xs uppercase tracking-[0.2em] text-slate-300">Panel administrativo</p>
+          </div>
+        </div>
       </div>
 
-      {/* MENU */}
-      <nav className="flex flex-col p-3 gap-1 flex-1">
-
+      <nav className="flex flex-1 flex-col gap-1 p-3">
         {menuItems.map((item, index) => (
-          <MenuItem
-            key={index}
-            icon={item.icon}
-            title={item.title}
-            path={item.path}
-          />
+          <MenuItem key={index} icon={item.icon} title={item.title} path={item.path} />
         ))}
-
       </nav>
 
-      {/* FOOTER */}
-      <div className="p-3 border-t text-xs text-gray-400">
-        v1.0 - Sistema interno
+      <div className="border-t border-slate-700 p-4 text-xs text-slate-400">
+        v1.0 · Sistema interno
       </div>
-
     </aside>
   );
 };

@@ -29,60 +29,40 @@ const estadoInicial = {
 };
 
 const FormularioCliente = ({
+   cliente,
+   guardar,
+   cancelar,
+   visible = true
+}) => {
+   const [formulario, setFormulario] = useState(estadoInicial);
 
-    cliente,
+   useEffect(() => {
+       if (cliente) {
+           setFormulario(cliente);
+       } else {
+           setFormulario(estadoInicial);
+       }
+   }, [cliente]);
 
-    guardar,
+   const handleChange = (e) => {
+       setFormulario({
+           ...formulario,
+           [e.target.name]: e.target.value
+       });
+   };
 
-    cancelar
+   const enviar = (e) => {
+       e.preventDefault();
+       guardar(formulario);
+   };
 
-})=>{
+   if (!visible) return null;
 
-const[formulario,setFormulario]=useState(estadoInicial);
-
-useEffect(()=>{
-
-if(cliente){
-
-setFormulario(cliente);
-
-}else{
-
-setFormulario(estadoInicial);
-
-}
-
-},[cliente]);
-
-const handleChange=(e)=>{
-
-setFormulario({
-
-...formulario,
-
-[e.target.name]:e.target.value
-
-});
-
-};
-
-const enviar=(e)=>{
-
-e.preventDefault();
-
-guardar(formulario);
-
-};
-
-return(
-
-<form
-
-onSubmit={enviar}
-
-className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
-
->
+   return (
+       <form
+           onSubmit={enviar}
+           className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
+       >
 
 <div className="mb-6 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
 
