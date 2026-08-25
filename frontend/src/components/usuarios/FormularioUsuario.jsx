@@ -3,8 +3,7 @@ import { useEffect, useState } from "react";
 const vacio = {
    nombre: "",
    usuario: "",
-   contraseña: "",
-   rol: "Administrador"
+   contraseña: ""
 };
 
 function FormularioUsuario({ visible = false, usuario = null, onGuardar = () => {}, onCancelar = () => {} }) {
@@ -15,8 +14,7 @@ function FormularioUsuario({ visible = false, usuario = null, onGuardar = () => 
            setFormulario({
                nombre: usuario.nombre || "",
                usuario: usuario.usuario || "",
-               contraseña: "",
-               rol: usuario.rol || "Administrador"
+               contraseña: ""
            });
        } else {
            setFormulario(vacio);
@@ -66,19 +64,8 @@ function FormularioUsuario({ visible = false, usuario = null, onGuardar = () => 
                    value={formulario.contraseña}
                    onChange={manejarCambio}
                    placeholder={usuario ? "Nueva contraseña" : "Contraseña"}
-                   className="rounded-2xl border border-slate-200 bg-slate-50 p-3 outline-none transition focus:border-[#ef4444] focus:bg-white"
+                   className="rounded-2xl border border-slate-200 bg-slate-50 p-3 outline-none transition focus:border-[#ef4444] focus:bg-white md:col-span-2"
                />
-
-               <select
-                   name="rol"
-                   value={formulario.rol}
-                   onChange={manejarCambio}
-                   className="rounded-2xl border border-slate-200 bg-slate-50 p-3 outline-none transition focus:border-[#ef4444] focus:bg-white"
-               >
-                   <option>Administrador</option>
-                   <option>Caja</option>
-                   <option>Mesero</option>
-               </select>
 
                <div className="md:col-span-2 flex justify-end gap-3">
                    <button type="button" onClick={onCancelar} className="rounded-2xl border border-slate-200 px-4 py-3 font-medium text-slate-700">

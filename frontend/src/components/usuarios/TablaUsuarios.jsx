@@ -9,7 +9,6 @@ function TablaUsuarios({ usuarios = [], onEditar = () => {}, onToggleSelect = ()
                        </th>
                        <th className="px-4 py-3">Nombre</th>
                        <th className="px-4 py-3">Usuario</th>
-                       <th className="px-4 py-3">Rol</th>
                        <th className="px-4 py-3">Estado</th>
                        <th className="px-4 py-3 text-right">Acciones</th>
                    </tr>
@@ -27,9 +26,6 @@ function TablaUsuarios({ usuarios = [], onEditar = () => {}, onToggleSelect = ()
                            </td>
                            <td className="px-4 py-3 font-medium text-slate-800">{usuario.nombre}</td>
                            <td className="px-4 py-3 text-slate-600">{usuario.usuario}</td>
-                           <td className="px-4 py-3">
-                               <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">{usuario.rol}</span>
-                           </td>
                            <td className="px-4 py-3">
                                <span className={`rounded-full px-2 py-1 text-xs font-semibold ${usuario.estado ? "bg-[#dcfce7] text-[#166534]" : "bg-[#fee2e2] text-[#b91c1c]"}`}>
                                    {usuario.estado ? "Activo" : "Inactivo"}

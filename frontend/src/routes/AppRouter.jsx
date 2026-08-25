@@ -9,6 +9,7 @@ import Usuarios from "../pages/Usuarios/Usuarios";
 import Clientes from "../pages/Clientes/Clientes";
 import Caja from "../pages/Caja/Caja";
 import Produccion from "../pages/Produccion/Produccion";
+import Inventario from "../pages/Inventario/Inventario";
 import Reportes from "../pages/Reportes/Reportes";
 import Configuracion from "../pages/Configuracion/Configuracion";
 import Menu from "../pages/Menu/Menu";
@@ -35,6 +36,7 @@ function AppRouter() {
                     <Route path="/menu" element={<Menu />} />
                     <Route path="/pedidos" element={<Pedidos />} />
                     <Route path="/caja" element={<Caja />} />
+                    <Route path="/inventario" element={<Inventario />} />
                     <Route path="/produccion" element={<Produccion />} />
                     <Route path="/reportes" element={<Reportes />} />
                     <Route path="/configuracion" element={<Configuracion />} />

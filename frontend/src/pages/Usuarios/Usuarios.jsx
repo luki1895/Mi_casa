@@ -5,7 +5,6 @@ import ResumenUsuarios from "../../components/usuarios/ResumenUsuarios";
 import BuscadorUsuarios from "../../components/usuarios/BuscadorUsuarios";
 import FormularioUsuario from "../../components/usuarios/FormularioUsuario";
 import TablaUsuarios from "../../components/usuarios/TablaUsuarios";
-import PermisosUsuario from "../../components/usuarios/PermisosUsuario";
 import BotonesUsuarios from "../../components/usuarios/BotonesUsuarios";
 
 function Usuarios() {
@@ -32,8 +31,7 @@ function Usuarios() {
    const dato = {
      ...usuario,
      id: usuario.id || Date.now(),
-     estado: usuario.estado ?? true,
-     rol: usuario.rol || "Administrador"
+     estado: usuario.estado ?? true
    };
 
    if (usuarioSeleccionado) {
@@ -80,7 +78,7 @@ function Usuarios() {
            <p className="text-sm font-semibold uppercase tracking-[0.2em] text-[#ef4444]">Usuarios</p>
            <h2 className="text-2xl font-bold text-slate-900">Gestión de accesos</h2>
          </div>
-         <p className="text-sm text-slate-500">Administra usuarios, permisos y aprobaciones desde un solo lugar.</p>
+         <p className="text-sm text-slate-500">Administra usuarios y aprobaciones desde un solo lugar.</p>
        </div>
      </div>
 
@@ -123,7 +121,6 @@ function Usuarios() {
        onEditar={abrirFormulario}
        onToggleSelect={alternarSeleccion}
      />
-     <PermisosUsuario />
 
      <Modal
        open={mostrarConfirmacion}

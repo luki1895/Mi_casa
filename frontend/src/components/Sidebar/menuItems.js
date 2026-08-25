@@ -46,6 +46,11 @@ const menuItems = [
     path: "/caja",
   },
   {
+    title: "Inventario",
+    icon: FaShoppingCart,
+    path: "/inventario",
+  },
+  {
     title: "Producción",
     icon: GiChefToque,
     path: "/produccion",
