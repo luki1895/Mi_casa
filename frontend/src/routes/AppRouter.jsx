@@ -1,8 +1,12 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 
 import MainLayout from "../layouts/MainLayout";
+import ProtectedRoute from "./ProtectedRoute";
 
-// Pages base del sistema
+import LandingPage from "../pages/Landing/LandingPage";
+import Login from "../pages/Login/Login";
+import ClientePortal from "../pages/ClientePortal/ClientePortal";
+
 import Dashboard from "../pages/Dashboard/Dashboard";
 import Pedidos from "../pages/Pedidos/Pedidos";
 import Usuarios from "../pages/Usuarios/Usuarios";
@@ -13,22 +17,29 @@ import Reportes from "../pages/Reportes/Reportes";
 import Configuracion from "../pages/Configuracion/Configuracion";
 import Menu from "../pages/Menu/Menu";
 
-// Login independiente
-import Login from "../pages/Login/Login";
-
 function AppRouter() {
     return (
         <BrowserRouter>
             <Routes>
-
-                {/* 🔹 Inicio → redirige al Dashboard */}
-                <Route path="/" element={<Navigate to="/dashboard" replace />} />
-
-                {/* 🔹 Login (sin layout) */}
+                <Route path="/" element={<LandingPage />} />
                 <Route path="/login" element={<Login />} />
 
-                {/* 🔹 Sistema principal con layout */}
-                <Route element={<MainLayout />}>
+                <Route
+                    path="/cliente"
+                    element={
+                        <ProtectedRoute allowedRoles={["cliente"]}>
+                            <ClientePortal />
+                        </ProtectedRoute>
+                    }
+                />
+
+                <Route
+                    element={
+                        <ProtectedRoute allowedRoles={["admin", "empleado"]}>
+                            <MainLayout />
+                        </ProtectedRoute>
+                    }
+                >
                     <Route path="/dashboard" element={<Dashboard />} />
                     <Route path="/usuarios" element={<Usuarios />} />
                     <Route path="/clientes" element={<Clientes />} />
@@ -40,9 +51,7 @@ function AppRouter() {
                     <Route path="/configuracion" element={<Configuracion />} />
                 </Route>
 
-                {/* 🔹 Fallback (opcional pero profesional) */}
-                <Route path="*" element={<Navigate to="/dashboard" replace />} />
-
+                <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
         </BrowserRouter>
     );

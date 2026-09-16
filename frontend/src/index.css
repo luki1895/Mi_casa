@@ -1,14 +1,53 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-*{
-  margin:0;
-  padding:0;
-  box-sizing:border-box;
+:root {
+  --bg-soft: #f8f5f2;
+  --bg-card: #ffffff;
+  --text: #1f2937;
+  --muted: #64748b;
+  --primary: #b45309;
+  --primary-dark: #92400e;
+  --line: #e7e5e4;
 }
 
-body{
-  font-family: Arial, Helvetica, sans-serif;
-  background:#f3f4f6;
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+  background: var(--bg-soft);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.soft-card {
+  @apply rounded-2xl border border-border bg-white shadow-card;
+}
+
+.section-title {
+  @apply text-3xl font-black text-slate-900 md:text-4xl;
+}
+
+.premium-button {
+  @apply inline-flex items-center justify-center rounded-full bg-primary px-6 py-3 text-sm font-semibold text-white transition hover:bg-primaryDark;
+}
+
+.secondary-button {
+  @apply inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-800 transition hover:bg-slate-50;
 }

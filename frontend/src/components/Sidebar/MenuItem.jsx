@@ -5,16 +5,15 @@ const MenuItem = ({ icon: Icon, title, path }) => {
         <NavLink
             to={path}
             className={({ isActive }) =>
-                `flex items-center gap-3 px-4 py-2 rounded-lg transition-all duration-200
-                ${
+                `flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium transition-all duration-200 ${
                     isActive
-                        ? "bg-blue-600 text-white shadow-md"
-                        : "text-gray-700 hover:bg-gray-100"
+                        ? "bg-gradient-to-r from-amber-400 to-orange-500 text-slate-900 shadow-lg"
+                        : "text-slate-300 hover:bg-slate-800 hover:text-white"
                 }`
             }
         >
-            <Icon size={20} />
-            <span className="font-medium">{title}</span>
+            <Icon size={18} />
+            <span>{title}</span>
         </NavLink>
     );
 };

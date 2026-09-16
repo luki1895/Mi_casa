@@ -4,20 +4,18 @@ import Navbar from "../components/Navbar/Navbar";
 
 function MainLayout() {
     return (
-        <div className="flex h-screen bg-gray-100">
-
+        <div className="flex min-h-screen bg-background text-text">
             <Sidebar />
 
-            <div className="flex flex-col flex-1">
-
+            <div className="flex flex-1 flex-col">
                 <Navbar />
 
-                <main className="flex-1 overflow-auto p-6">
-                    <Outlet />
+                <main className="flex-1 overflow-auto bg-[#f8f5f2] p-6 md:p-8">
+                    <div className="mx-auto max-w-7xl">
+                        <Outlet />
+                    </div>
                 </main>
-
             </div>
-
         </div>
     );
 }

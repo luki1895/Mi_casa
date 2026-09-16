@@ -1,6 +1,7 @@
-import React from "react";
+import Card from "../ui/Card";
 
-const DashboardCard=({
+
+const DashboardCard = ({
 
 titulo,
 
@@ -8,44 +9,105 @@ valor,
 
 icono,
 
-color
+color = "primary"
 
-})=>{
+}) => {
 
-return(
 
-<div className={`${color} rounded-xl text-white p-5`}>
+const colors = {
 
-<div className="flex justify-between">
+
+primary:
+"bg-primary",
+
+
+success:
+"bg-success",
+
+
+danger:
+"bg-danger",
+
+
+warning:
+"bg-warning",
+
+
+info:
+"bg-info"
+
+
+};
+
+
+
+return (
+
+<Card
+
+className={`
+${colors[color]}
+text-white
+`}
+>
+
+
+<div className="
+flex
+justify-between
+items-center
+">
+
 
 <div>
 
-<p>
+
+<p className="
+text-sm
+opacity-90
+">
 
 {titulo}
 
 </p>
 
-<h2 className="text-3xl font-bold">
+
+
+<h2 className="
+text-3xl
+font-bold
+mt-2
+">
 
 {valor}
 
 </h2>
 
+
 </div>
 
-<div className="text-5xl">
+
+
+<div className="
+text-5xl
+opacity-90
+">
 
 {icono}
 
 </div>
 
-</div>
+
 
 </div>
+
+
+</Card>
 
 );
 
+
 };
+
 
 export default DashboardCard;
