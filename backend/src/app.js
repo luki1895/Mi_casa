@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import morgan from "morgan";
+import errorMiddleware from "./middlewares/error.middleware.js";
 
 import authRoutes from "./routes/auth.routes.js";
 import clienteRoutes from "./routes/cliente.routes.js";
@@ -11,7 +12,8 @@ import produccionRoutes from "./routes/produccion.routes.js";
 import cajaRoutes from "./routes/caja.routes.js";
 import gastoRoutes from "./routes/gasto.routes.js";
 import reporteRoutes from "./routes/reporte.routes.js";
-import errorMiddleware from "./middlewares/error.middleware.js";
+
+
 
 const app = express();
 
@@ -23,17 +25,18 @@ app.use("/api/auth", authRoutes);
 app.use("/api/clientes", clienteRoutes);
 app.use("/api/usuarios", usuarioRoutes);
 app.use("/api/configuracion", configuracionRoutes);
-app.use("/api/pedidos",pedidoRoutes);
-app.use("/api/produccion",produccionRoutes);
-app.use("/api/caja",cajaRoutes);
-app.use("/api/gastos",gastoRoutes);
-app.use("/api/reportes",reporteRoutes);
-app.use(errorMiddleware);
+app.use("/api/pedidos", pedidoRoutes);
+app.use("/api/produccion", produccionRoutes);
+app.use("/api/caja", cajaRoutes);
+app.use("/api/gastos", gastoRoutes);
+app.use("/api/reportes", reporteRoutes);
 
 app.get("/", (req, res) => {
     res.json({
         mensaje: "Backend Mi Casa funcionando"
     });
 });
+
+app.use(errorMiddleware);
 
 export default app;
