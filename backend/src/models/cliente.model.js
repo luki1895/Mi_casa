@@ -2,7 +2,7 @@ import pool from "../config/db.js";
 
 const listar = async () => {
 
-    const [rows] = await pool.query(
+    const { rows } = await pool.query(
 
         `
 
@@ -22,7 +22,7 @@ const listar = async () => {
 
 const obtener = async (id) => {
 
-    const [rows] = await pool.query(
+    const { rows } = await pool.query(
 
         `
 
@@ -30,7 +30,7 @@ const obtener = async (id) => {
 
         FROM cliente
 
-        WHERE id_cliente=?
+        WHERE id_cliente=$1
 
         `,
 
@@ -58,7 +58,7 @@ const crear = async (datos) => {
 
     } = datos;
 
-    const [resultado] = await pool.query(
+    const resultado = await pool.query(
 
         `
 
@@ -80,7 +80,7 @@ const crear = async (datos) => {
 
         VALUES
 
-        (?, ?, ?, ?, ?)
+        ($1, $2, $3, $4, $5)
 
         `,
 
@@ -120,7 +120,7 @@ const actualizar = async (id, datos) => {
 
     } = datos;
 
-    const [resultado] = await pool.query(
+    const resultado = await pool.query(
 
         `
 
@@ -128,17 +128,17 @@ const actualizar = async (id, datos) => {
 
         SET
 
-        nombre=?,
+        nombre=$1,
 
-        telefono=?,
+        telefono=$2,
 
-        tipo_cliente=?,
+        tipo_cliente=$3,
 
-        saldo_pensiones=?,
+        saldo_pensiones=$4,
 
-        estado=?
+        estado=$5
 
-        WHERE id_cliente=?
+        WHERE id_cliente=$6
 
         `,
 
@@ -166,13 +166,13 @@ const actualizar = async (id, datos) => {
 
 const eliminar = async (id) => {
 
-    const [resultado] = await pool.query(
+    const resultado = await pool.query(
 
         `
 
         DELETE FROM cliente
 
-        WHERE id_cliente=?
+        WHERE id_cliente=$1
 
         `,
 

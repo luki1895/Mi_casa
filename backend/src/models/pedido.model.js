@@ -2,7 +2,7 @@ import pool from "../config/db.js";
 
 const listar=async()=>{
 
-const[rows]=await pool.query(
+const { rows } = await pool.query(
 
 `
 
@@ -36,7 +36,7 @@ return rows;
 
 const crear=async(datos)=>{
 
-const[resultado]=await pool.query(
+const resultado = await pool.query(
 
 `
 
@@ -60,8 +60,9 @@ total
 
 VALUES
 
-(?,?,?,?,?,?)
+($1,$2,$3,$4,$5,$6)
 
+RETURNING id_pedido
 `
 
 ,[
@@ -80,7 +81,7 @@ datos.total
 
 ]);
 
-return resultado.insertId;
+return resultado.rows[0].id_pedido;
 
 };
 

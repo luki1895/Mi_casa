@@ -2,7 +2,7 @@ import pool from "../config/db.js";
 
 const listar = async () => {
 
-    const [rows] = await pool.query(
+    const { rows } = await pool.query(
 
         "SELECT * FROM usuario ORDER BY id_usuario DESC"
 
@@ -14,9 +14,9 @@ const listar = async () => {
 
 const obtener = async (id) => {
 
-    const [rows] = await pool.query(
+    const { rows } = await pool.query(
 
-        "SELECT * FROM usuario WHERE id_usuario=?",
+        "SELECT * FROM usuario WHERE id_usuario=$1",
 
         [id]
 
@@ -42,7 +42,7 @@ const crear = async (datos) => {
 
     } = datos;
 
-    const [resultado] = await pool.query(
+    const resultado = await pool.query(
 
         `
 
@@ -64,7 +64,7 @@ const crear = async (datos) => {
 
         VALUES
 
-        (?, ?, ?, ?, ?)
+        ($1, $2, $3, $4, $5)
 
         `,
 
@@ -102,7 +102,7 @@ const actualizar = async (id, datos) => {
 
     } = datos;
 
-    const [resultado] = await pool.query(
+    const resultado = await pool.query(
 
         `
 
@@ -110,15 +110,15 @@ const actualizar = async (id, datos) => {
 
         SET
 
-        usuario=?,
+        usuario=$1,
 
-        password=?,
+        password=$2,
 
-        rol=?,
+        rol=$3,
 
-        estado=?
+        estado=$4
 
-        WHERE id_usuario=?
+        WHERE id_usuario=$5
 
         `,
 
@@ -144,9 +144,9 @@ const actualizar = async (id, datos) => {
 
 const eliminar = async (id) => {
 
-    const [resultado] = await pool.query(
+    const resultado = await pool.query(
 
-        "DELETE FROM usuario WHERE id_usuario=?",
+        "DELETE FROM usuario WHERE id_usuario=$1",
 
         [id]
 

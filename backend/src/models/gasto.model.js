@@ -2,7 +2,7 @@ import pool from "../config/db.js";
 
 const listar=async()=>{
 
-const[rows]=await pool.query(
+const { rows } = await pool.query(
 
 `
 
@@ -22,7 +22,7 @@ return rows;
 
 const crear=async(datos)=>{
 
-const[resultado]=await pool.query(
+const resultado = await pool.query(
 
 `
 
@@ -48,13 +48,13 @@ VALUES
 
 NOW(),
 
-?,
+$1,
 
-?,
+$2,
 
-?,
+$3,
 
-?
+$4
 
 )
 

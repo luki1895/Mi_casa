@@ -2,7 +2,7 @@ import pool from "../config/db.js";
 
 const listar=async(fecha)=>{
 
-const [rows]=await pool.query(
+const { rows } = await pool.query(
 
 `
 
@@ -44,7 +44,7 @@ LEFT JOIN producto r ON pd.id_refresco=r.id_producto
 
 LEFT JOIN producto pe ON pd.id_plato_extra=pe.id_producto
 
-WHERE fecha=?
+WHERE fecha=$1
 
 `,
 
@@ -58,7 +58,7 @@ return rows;
 
 const crear=async(datos)=>{
 
-const[resultado]=await pool.query(
+const resultado = await pool.query(
 
 `
 
@@ -92,7 +92,7 @@ cantidad_extra
 
 VALUES
 
-(?,?,?,?,?,?,?,?,?,?,?)
+($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
 
 `
 

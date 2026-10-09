@@ -2,7 +2,7 @@ import pool from "../config/db.js";
 
 const obtener = async () => {
 
-    const [rows] = await pool.query(
+    const { rows } = await pool.query(
 
         "SELECT * FROM configuracion LIMIT 1"
 
@@ -26,7 +26,7 @@ const actualizar = async (datos) => {
 
     } = datos;
 
-    const [resultado] = await pool.query(
+    const resultado = await pool.query(
 
         `
 
@@ -34,13 +34,13 @@ const actualizar = async (datos) => {
 
         SET
 
-        precio_almuerzo = ?,
+        precio_almuerzo = $1,
 
-        precio_sopa = ?,
+        precio_sopa = $2,
 
-        precio_segundo = ?,
+        precio_segundo = $3,
 
-        precio_plato_extra = ?
+        precio_plato_extra = $4
 
         WHERE id_configuracion = 1
 

@@ -2,13 +2,13 @@ import pool from "../config/db.js";
 
 const buscarUsuario=async(usuario)=>{
 
-const[rows]=await pool.query(
+const { rows } = await pool.query(
 
 `SELECT *
 
 FROM usuario
 
-WHERE usuario=?`,
+WHERE usuario=$1`,
 
 [usuario]
 

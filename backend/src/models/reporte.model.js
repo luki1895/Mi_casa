@@ -2,7 +2,7 @@ import pool from "../config/db.js";
 
 const ventasHoy = async () => {
 
-    const [rows] = await pool.query(
+    const { rows } = await pool.query(
 
         `
 
@@ -14,7 +14,7 @@ const ventasHoy = async () => {
 
         FROM pedido
 
-        WHERE DATE(fecha)=CURDATE()
+        WHERE DATE(fecha)=CURRENT_DATE
 
         `
 
@@ -26,17 +26,17 @@ const ventasHoy = async () => {
 
 const gastosHoy = async () => {
 
-    const [rows] = await pool.query(
+    const { rows } = await pool.query(
 
         `
 
         SELECT
 
-        IFNULL(SUM(total),0) total
+        COALESCE(SUM(total),0) total
 
         FROM gasto
 
-        WHERE DATE(fecha)=CURDATE()
+        WHERE DATE(fecha)=CURRENT_DATE
 
         `
 
@@ -48,7 +48,7 @@ const gastosHoy = async () => {
 
 const pensionadosHoy = async () => {
 
-    const [rows] = await pool.query(
+    const { rows } = await pool.query(
 
         `
 
@@ -60,7 +60,7 @@ const pensionadosHoy = async () => {
 
         WHERE tipo_cliente='PENSIONADO'
 
-        AND DATE(fecha)=CURDATE()
+        AND DATE(fecha)=CURRENT_DATE
 
         `
 
@@ -72,7 +72,7 @@ const pensionadosHoy = async () => {
 
 const eventualesHoy = async () => {
 
-    const [rows] = await pool.query(
+    const { rows } = await pool.query(
 
         `
 
@@ -84,7 +84,7 @@ const eventualesHoy = async () => {
 
         WHERE tipo_cliente='EVENTUAL'
 
-        AND DATE(fecha)=CURDATE()
+        AND DATE(fecha)=CURRENT_DATE
 
         `
 
