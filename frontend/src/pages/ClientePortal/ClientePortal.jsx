@@ -117,6 +117,7 @@ function ClientePortal() {
     };
 
     const menuHoy = menusSemana[hoy] || [];
+    const reservaHoy = (cuenta?.reservas || []).find((item) => String(item.fecha).slice(0, 10) === hoy);
 
     return (
         <div className="min-h-screen bg-[#f8f5f2] text-slate-800">
@@ -145,21 +146,40 @@ function ClientePortal() {
                     <p className="rounded-2xl bg-white p-6 text-slate-500">Cargando cuenta y menú de la semana…</p>
                 ) : (
                     <>
-                        <section className="grid gap-4 sm:grid-cols-2">
-                            <article className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
-                                <p className="text-sm text-slate-500">Cuenta del cliente</p>
-                                <h2 className="mt-2 text-2xl font-black">{cuenta?.nombre || usuario?.name || usuario?.username || "Cliente"}</h2>
-                                <p className="mt-1 text-sm text-slate-600">{cuenta?.telefono || "Teléfono no registrado"}</p>
-                                {cuenta?.tipo_cliente && <p className="mt-1 text-sm text-slate-600">Tipo: {cuenta.tipo_cliente}</p>}
-                            </article>
-                            <article className="rounded-2xl bg-slate-900 p-6 text-white shadow-sm">
-                                <p className="text-sm text-amber-200">Almuerzos restantes</p>
-                                <p className="mt-2 text-4xl font-black">{cuenta ? Number(cuenta.saldo_pensiones || 0) : "—"}</p>
-                                <p className="mt-1 text-sm text-slate-300">Saldo registrado en tu cuenta de pensionado</p>
-                            </article>
-                        </section>
+                    <section id="cliente-dashboard" aria-label="Resumen de cliente" className="scroll-mt-6 space-y-5">
+                        <div className="rounded-3xl bg-slate-900 p-6 text-white shadow-sm sm:p-8">
+                            <p className="text-xs font-bold uppercase tracking-[0.25em] text-amber-300">Dashboard del cliente</p>
+                            <div className="mt-2 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+                                <div>
+                                    <h2 className="text-3xl font-black">Hola, {cuenta?.nombre || usuario?.name || usuario?.username || "Cliente"}</h2>
+                                    <p className="mt-2 text-sm text-slate-300">{cuenta?.telefono || "Teléfono no registrado"}{cuenta?.tipo_cliente ? ` · ${cuenta.tipo_cliente}` : ""}</p>
+                                </div>
+                                <p className="text-sm capitalize text-slate-300">{presentarFecha(hoy)}</p>
+                            </div>
+                        </div>
+                        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                            {[
+                                ["Almuerzos restantes", cuenta ? Number(cuenta.saldo_pensiones || 0) : "—", "Saldo de tu cuenta"],
+                                ["Platos disponibles hoy", menuHoy.length, "Opciones publicadas"],
+                                ["Reserva de hoy", reservaHoy ? estadoBonito(reservaHoy.estado) : "Sin reserva", reservaHoy ? `${String(reservaHoy.hora).slice(0, 5)} · ${reservaHoy.cantidad_personas} personas` : "Puedes solicitar una reserva"],
+                                ["Pedidos recientes", (cuenta?.pedidos || []).length, "Pedidos asociados a tu cuenta"],
+                            ].map(([titulo, valor, detalle]) => (
+                                <article key={titulo} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                                    <p className="text-sm font-medium text-slate-500">{titulo}</p>
+                                    <p className="mt-3 text-2xl font-black capitalize text-slate-900">{valor}</p>
+                                    <p className="mt-1 text-xs text-slate-500">{detalle}</p>
+                                </article>
+                            ))}
+                        </div>
+                        <nav aria-label="Accesos del cliente" className="flex flex-wrap gap-2">
+                            <a href="#cliente-menu-hoy" className="rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-bold text-slate-950 hover:bg-amber-400">Ver menú de hoy</a>
+                            <a href="#cliente-reservas" className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50">Realizar reserva</a>
+                            <a href="#cliente-menu-semanal" className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50">Menú semanal</a>
+                            <a href="#cliente-pedidos" className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50">Mis pedidos</a>
+                        </nav>
+                    </section>
 
-                        <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
+                    <section id="cliente-menu-hoy" className="scroll-mt-6 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
                             <div className="flex flex-wrap items-end justify-between gap-3">
                                 <div>
                                     <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Disponibilidad de hoy</p>
@@ -180,7 +200,7 @@ function ClientePortal() {
                             </div>
                         </section>
 
-                        <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
+                        <section id="cliente-menu-semanal" className="scroll-mt-6 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
                             <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Planificación</p>
                             <h2 className="mt-1 text-2xl font-black">Menú semanal</h2>
                             <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -201,7 +221,7 @@ function ClientePortal() {
                             </div>
                         </section>
 
-                        <section className="grid gap-6 lg:grid-cols-2">
+                        <section id="cliente-reservas" className="scroll-mt-6 grid gap-6 lg:grid-cols-2">
                             <article className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
                                 <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Hoy · {presentarFecha(hoy)}</p>
                                 <h2 className="mt-1 text-2xl font-black">Solicitar una reserva</h2>
@@ -244,7 +264,7 @@ function ClientePortal() {
                             </article>
                         </section>
 
-                        <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
+                        <section id="cliente-pedidos" className="scroll-mt-6 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
                             <h2 className="text-2xl font-black">Mis pedidos recientes</h2>
                             <div className="mt-4 space-y-3">
                                 {(cuenta?.pedidos || []).map((pedido) => (

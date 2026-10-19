@@ -243,6 +243,8 @@ function Mesero() {
     const pedidosActivosFiltrados = pedidosActivos.filter((pedido) =>
         `${pedido.id_pedido} ${pedido.cliente || pedido.nombre || ""}`.toLowerCase().includes(busqueda.trim().toLowerCase())
     );
+    const pedidosListos = pedidosActivos.filter((pedido) => String(pedido.estado).toUpperCase() === "LISTO").length;
+    const platosDisponibles = menu.filter((plato) => Number(plato.stock) > 0).length;
 
     const fechaHoy = new Intl.DateTimeFormat("es", {
         weekday: "long", day: "numeric", month: "long", year: "numeric",
@@ -274,7 +276,37 @@ function Mesero() {
                 </div>
             )}
 
-            <section className="rounded-2xl bg-white p-5 shadow-sm sm:p-6">
+            <section aria-label="Resumen del turno" className="space-y-5">
+                <div className="flex flex-wrap items-end justify-between gap-3">
+                    <div>
+                        <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Dashboard del mesero</p>
+                        <h2 className="mt-1 text-2xl font-black text-slate-900">Resumen del turno</h2>
+                        <p className="mt-1 text-sm text-slate-500">Pedidos que requieren atención y disponibilidad para tomar nuevas órdenes.</p>
+                    </div>
+                    <button onClick={cargarDatos} className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50">Actualizar</button>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                    {[
+                        ["Pedidos activos", pedidosActivos.length, "En seguimiento"],
+                        ["Listos para entregar", pedidosListos, "Requieren atención"],
+                        ["Platos disponibles", platosDisponibles, "Opciones del menú de hoy"],
+                        ["Servicios registrados", servicios.length, "Actividad de tu turno"],
+                    ].map(([titulo, valor, detalle]) => (
+                        <article key={titulo} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                            <p className="text-sm font-medium text-slate-500">{titulo}</p>
+                            <p className="mt-3 text-3xl font-black text-slate-900">{cargando ? "—" : valor}</p>
+                            <p className="mt-1 text-xs text-slate-500">{detalle}</p>
+                        </article>
+                    ))}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                    <a href="#mesero-nuevo-pedido" className="rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-bold text-slate-950 hover:bg-amber-400">Crear pedido</a>
+                    <a href="#mesero-pedidos" className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50">Ver pedidos activos</a>
+                    <a href="#mesero-menu" className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50">Consultar menú</a>
+                </div>
+            </section>
+
+            <section id="mesero-pedidos" className="scroll-mt-6 rounded-2xl bg-white p-5 shadow-sm sm:p-6">
                 <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
                     <div><p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Seguimiento del restaurante</p><h2 className="mt-1 text-2xl font-black text-slate-900">Pedidos activos</h2><p className="mt-1 text-sm text-slate-500">Consulta cliente, hora, productos y estado actualizado por Caja.</p></div>
                     <input value={busqueda} onChange={(event) => setBusqueda(event.target.value)} placeholder="Buscar cliente o número de pedido" className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm sm:max-w-xs" />
@@ -302,7 +334,7 @@ function Mesero() {
             </section>
 
             <div className="grid gap-6 xl:grid-cols-[1.35fr_0.85fr]">
-                <section className="space-y-6">
+                <section id="mesero-menu" className="scroll-mt-6 space-y-6">
                     <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
                         <div>
                             <p className="text-xs font-bold uppercase tracking-[0.25em] text-amber-700">Disponible hoy</p>
@@ -378,7 +410,7 @@ function Mesero() {
                     </section>
                 </section>
 
-                <aside className="h-fit rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100 sm:p-6">
+                <aside id="mesero-nuevo-pedido" className="scroll-mt-6 h-fit rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100 sm:p-6">
                     <div className="flex items-start justify-between">
                         <div>
                             <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Nuevo servicio</p>

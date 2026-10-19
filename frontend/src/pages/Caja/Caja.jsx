@@ -11,7 +11,7 @@ const estadoBonito = (valor) => String(valor || "PENDIENTE").replaceAll("_", " "
 
 function Caja() {
     const { usuario } = useAuth();
-    const [seccionActiva, setSeccionActiva] = useState("CAJA");
+    const [seccionActiva, setSeccionActiva] = useState("DASHBOARD");
     const [panel, setPanel] = useState({ ventas: 0, gastos: 0, saldo_esperado: 0, pedidos_pendientes: 0, cierre: null, apertura: null, estado_caja: "SIN_ABRIR" });
     const [reporte, setReporte] = useState({ fecha: "", pagos: [], gastos: [], total_pagos: 0, total_gastos: 0 });
     const [pedidos, setPedidos] = useState([]);
@@ -204,11 +204,12 @@ function Caja() {
 
     return (
         <div className="space-y-6">
-            <header className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-[0.25em] text-amber-700">Operaciones diarias</p><h1 className="mt-1 text-3xl font-black text-slate-900">Panel de Caja</h1><p className="mt-1 text-sm text-slate-500">Caja, pedidos y reportes en secciones separadas.</p></div><button onClick={cargar} className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold">Actualizar</button></header>
+            <header className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-[0.25em] text-amber-700">Operaciones diarias</p><h1 className="mt-1 text-3xl font-black text-slate-900">Panel de Caja</h1><p className="mt-1 text-sm text-slate-500">Resumen del turno, gestión de Caja, pedidos y reportes por separado.</p></div><button onClick={cargar} className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold">Actualizar</button></header>
             {error && <p role="alert" className="rounded-xl bg-rose-50 p-4 text-sm text-rose-800">{error}</p>}
             {aviso && <p role="status" className="rounded-xl bg-amber-50 p-4 text-sm text-amber-900">{aviso}</p>}
-            <nav aria-label="Secciones de Caja" className="flex flex-wrap gap-2 rounded-2xl bg-white p-2 shadow-sm">
+            <nav aria-label="Secciones de Caja" className="flex flex-wrap gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
                 {[
+                    ["DASHBOARD", "Dashboard"],
                     ["CAJA", "1. Caja"],
                     ["PEDIDOS", "2. Pedidos"],
                     ["REPORTES", "3. Reportes"],
@@ -218,12 +219,68 @@ function Caja() {
                         type="button"
                         onClick={() => setSeccionActiva(seccion)}
                         aria-current={seccionActiva === seccion ? "page" : undefined}
-                        className={`rounded-xl px-5 py-3 text-sm font-bold transition ${seccionActiva === seccion ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"}`}
+                        className={`rounded-xl px-5 py-3 text-sm font-bold transition ${seccionActiva === seccion ? "bg-slate-900 text-white shadow-sm" : "text-slate-600 hover:bg-slate-100"}`}
                     >
                         {titulo}
                     </button>
                 ))}
             </nav>
+            {seccionActiva === "DASHBOARD" && (
+                <div className="space-y-5">
+                    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+                        <div className="flex flex-wrap items-start justify-between gap-4">
+                            <div>
+                                <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Resumen de turno</p>
+                                <h2 className="mt-1 text-2xl font-black text-slate-900">Estado de Caja</h2>
+                                <p className="mt-2 text-sm text-slate-500">
+                                    {panel.apertura
+                                        ? `Responsable: ${panel.apertura.responsable} · Apertura ${new Date(panel.apertura.abierta_en).toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" })}`
+                                        : "Aún no se ha registrado una apertura para este turno."}
+                                </p>
+                            </div>
+                            <span className={`rounded-full px-3 py-1.5 text-xs font-bold ${panel.estado_caja === "ABIERTA" ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-700"}`}>
+                                {panel.estado_caja === "SIN_ABRIR" ? "CERRADA · SIN APERTURA" : panel.estado_caja}
+                            </span>
+                        </div>
+                    </section>
+                    <section aria-label="Resumen financiero del turno" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                        {[
+                            ["Ventas cobradas", importe(panel.ventas), "text-emerald-700", "Ingresos confirmados en este turno"],
+                            ["Gastos registrados", importe(panel.gastos), "text-rose-700", "Salidas del turno"],
+                            ["Efectivo esperado", importe(panel.saldo_esperado), "text-slate-900", "Considera efectivo y gastos en efectivo"],
+                            ["Monto inicial", importe(panel.apertura?.monto_inicial), "text-amber-700", "Efectivo registrado al abrir"],
+                        ].map(([titulo, valor, tono, detalle]) => (
+                            <article key={titulo} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                                <p className="text-sm font-medium text-slate-500">{titulo}</p>
+                                <p className={`mt-3 text-2xl font-black ${tono}`}>{cargando ? "—" : valor}</p>
+                                <p className="mt-2 text-xs text-slate-500">{detalle}</p>
+                            </article>
+                        ))}
+                    </section>
+                    {panel.estado_caja !== "ABIERTA" && (
+                        <section className="flex flex-col justify-between gap-4 rounded-2xl border border-amber-200 bg-amber-50 p-5 sm:flex-row sm:items-center">
+                            <div>
+                                <h3 className="font-black text-amber-950">Inicia el turno de Caja</h3>
+                                <p className="mt-1 text-sm text-amber-900">Registra el efectivo inicial desde la sección Caja para habilitar las operaciones del turno.</p>
+                            </div>
+                            <button type="button" onClick={() => setSeccionActiva("CAJA")} className="rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-bold text-slate-950 hover:bg-amber-400">Ir a Caja</button>
+                        </section>
+                    )}
+                    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+                        <div className="flex flex-wrap items-center justify-between gap-4">
+                            <div>
+                                <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Accesos rápidos</p>
+                                <h2 className="mt-1 text-xl font-black text-slate-900">Tareas del área</h2>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                                <button type="button" onClick={() => setSeccionActiva("CAJA")} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50">Apertura, gastos y cierre</button>
+                                <button type="button" onClick={() => setSeccionActiva("PEDIDOS")} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50">Registrar o cobrar pedidos</button>
+                                <button type="button" onClick={() => setSeccionActiva("REPORTES")} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50">Consultar reportes</button>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+            )}
             {seccionActiva === "CAJA" && (
                 <>
             <section className="flex flex-col justify-between gap-4 rounded-2xl bg-white p-5 shadow-sm sm:flex-row sm:items-center">
