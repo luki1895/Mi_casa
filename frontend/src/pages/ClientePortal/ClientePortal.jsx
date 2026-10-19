@@ -1,48 +1,133 @@
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import api from "../../api/axios";
 import useAuth from "../../hooks/useAuth";
 
-const consumo = [
-    { fecha: "12 Sep", descripcion: "Almuerzo ejecutivo", monto: "Bs 85" },
-    { fecha: "08 Sep", descripcion: "Cena familiar", monto: "Bs 120" },
-    { fecha: "03 Sep", descripcion: "Desayuno gourmet", monto: "Bs 65" },
-];
+const obtenerFechaLocal = (fecha = new Date()) => {
+    const año = fecha.getFullYear();
+    const mes = String(fecha.getMonth() + 1).padStart(2, "0");
+    const dia = String(fecha.getDate()).padStart(2, "0");
+    return `${año}-${mes}-${dia}`;
+};
 
-const beneficios = [
-    { label: "Almuerzos restantes", value: "4" },
-    { label: "Puntos activos", value: "320" },
-    { label: "Reservas", value: "2" },
-];
+const fechasSemana = () => {
+    const hoy = new Date();
+    const lunes = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
+    lunes.setDate(lunes.getDate() - ((lunes.getDay() + 6) % 7));
+    return Array.from({ length: 7 }, (_, indice) => {
+        const fecha = new Date(lunes);
+        fecha.setDate(lunes.getDate() + indice);
+        return obtenerFechaLocal(fecha);
+    });
+};
 
-const planSemanal = [
-    { dia: "Lun", comida: "Almuerzo ejecutivo" },
-    { dia: "Mar", comida: "Cena familiar" },
-    { dia: "Jue", comida: "Reserva especial" },
-    { dia: "Vie", comida: "Menú premium" },
-];
+const presentarFecha = (fecha) => new Date(`${fecha}T12:00:00`).toLocaleDateString("es", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+});
+
+const moneda = (importe) => `Bs ${Number(importe || 0).toFixed(2)}`;
+const estadoBonito = (estado) => String(estado || "PENDIENTE").replaceAll("_", " ");
 
 function ClientePortal() {
     const { usuario, logout } = useAuth();
     const navigate = useNavigate();
+    const hoy = obtenerFechaLocal();
+    const semana = useMemo(() => fechasSemana(), []);
+    const [cuenta, setCuenta] = useState(null);
+    const [menusSemana, setMenusSemana] = useState({});
+    const [cargando, setCargando] = useState(true);
+    const [error, setError] = useState("");
+    const [aviso, setAviso] = useState("");
+    const [guardando, setGuardando] = useState(false);
+    const [reserva, setReserva] = useState({ hora: "", cantidad_personas: "2", observaciones: "" });
+
+    useEffect(() => {
+        let cancelado = false;
+        const cargar = async () => {
+            setCargando(true);
+            setError("");
+            if (usuario?.demo) {
+                setCuenta(null);
+                setMenusSemana({});
+                setAviso("Cuenta de demostración: el contenido personal y las reservas requieren una cuenta vinculada a un cliente real.");
+                setCargando(false);
+                return;
+            }
+            const resultados = await Promise.allSettled([
+                api.get("/clientes/mi-cuenta"),
+                ...semana.map((fecha) => api.get(`/produccion/menu?fecha=${fecha}`)),
+            ]);
+            if (cancelado) return;
+            if (resultados[0].status === "fulfilled") {
+                setCuenta(resultados[0].value.data.data);
+            } else {
+                setCuenta(null);
+                setError(resultados[0].reason.response?.data?.mensaje || "No se pudo cargar la información de tu cuenta.");
+            }
+            const menus = {};
+            resultados.slice(1).forEach((resultado, indice) => {
+                menus[semana[indice]] = resultado.status === "fulfilled"
+                    ? resultado.value.data.data || []
+                    : [];
+            });
+            setMenusSemana(menus);
+            setCargando(false);
+        };
+        cargar();
+        return () => { cancelado = true; };
+    }, [usuario?.demo, semana]);
 
     const handleLogout = () => {
         logout();
-        navigate("/login");
+        navigate("/login", { replace: true });
     };
+
+    const solicitarReserva = async (event) => {
+        event.preventDefault();
+        setAviso("");
+        if (!reserva.hora || Number(reserva.cantidad_personas) < 1) {
+            setAviso("Indica la hora y una cantidad válida de personas.");
+            return;
+        }
+        if (usuario?.demo) {
+            setAviso("Las reservas no se guardan desde una cuenta de demostración.");
+            return;
+        }
+        setGuardando(true);
+        try {
+            const { data } = await api.post("/clientes/mis-reservas", {
+                fecha: hoy,
+                hora: reserva.hora,
+                cantidad_personas: Number(reserva.cantidad_personas),
+                observaciones: reserva.observaciones.trim(),
+            });
+            setCuenta((actual) => ({
+                ...actual,
+                reservas: [data.data, ...(actual?.reservas || [])],
+            }));
+            setReserva({ hora: "", cantidad_personas: "2", observaciones: "" });
+            setAviso("Solicitud enviada. La reserva queda pendiente de confirmación del restaurante.");
+        } catch (requestError) {
+            setAviso(requestError.response?.data?.mensaje || "No se pudo enviar la solicitud de reserva.");
+        } finally {
+            setGuardando(false);
+        }
+    };
+
+    const menuHoy = menusSemana[hoy] || [];
 
     return (
         <div className="min-h-screen bg-[#f8f5f2] text-slate-800">
-            <header className="border-b border-slate-200 bg-white/90 backdrop-blur">
-                <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-5">
+            <header className="border-b border-slate-200 bg-white">
+                <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-6 py-5">
                     <div>
                         <p className="text-sm uppercase tracking-[0.28em] text-amber-600">Mi Casa</p>
-                        <h1 className="text-2xl font-black text-slate-900">Portal del cliente</h1>
+                        <h1 className="text-2xl font-black text-slate-900">Mi cuenta</h1>
                     </div>
-
                     <div className="flex items-center gap-4">
-                        <div className="text-right">
-                            <p className="text-sm text-slate-500">Bienvenido</p>
-                            <p className="font-semibold text-slate-900">{usuario?.name || "Fernando"}</p>
-                        </div>
+                        <p className="hidden text-sm text-slate-600 sm:block">{cuenta?.nombre || usuario?.name || usuario?.username}</p>
                         <button
                             onClick={handleLogout}
                             className="rounded-full bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-700"
@@ -53,97 +138,129 @@ function ClientePortal() {
                 </div>
             </header>
 
-            <main className="mx-auto max-w-7xl px-6 py-10">
-                <section className="grid gap-6 md:grid-cols-3">
-                    {beneficios.map((item) => (
-                        <div key={item.label} className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
-                            <p className="text-sm uppercase tracking-[0.2em] text-slate-500">{item.label}</p>
-                            <p className="mt-4 text-4xl font-black text-slate-900">{item.value}</p>
-                        </div>
-                    ))}
-                </section>
+            <main className="mx-auto max-w-6xl space-y-6 px-6 py-8">
+                {error && <p role="alert" className="rounded-xl bg-rose-50 p-4 text-sm text-rose-800">{error}</p>}
+                {aviso && <p role="status" className="rounded-xl bg-amber-50 p-4 text-sm text-amber-900">{aviso}</p>}
+                {cargando ? (
+                    <p className="rounded-2xl bg-white p-6 text-slate-500">Cargando cuenta y menú de la semana…</p>
+                ) : (
+                    <>
+                        <section className="grid gap-4 sm:grid-cols-2">
+                            <article className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
+                                <p className="text-sm text-slate-500">Cuenta del cliente</p>
+                                <h2 className="mt-2 text-2xl font-black">{cuenta?.nombre || usuario?.name || usuario?.username || "Cliente"}</h2>
+                                <p className="mt-1 text-sm text-slate-600">{cuenta?.telefono || "Teléfono no registrado"}</p>
+                                {cuenta?.tipo_cliente && <p className="mt-1 text-sm text-slate-600">Tipo: {cuenta.tipo_cliente}</p>}
+                            </article>
+                            <article className="rounded-2xl bg-slate-900 p-6 text-white shadow-sm">
+                                <p className="text-sm text-amber-200">Almuerzos restantes</p>
+                                <p className="mt-2 text-4xl font-black">{cuenta ? Number(cuenta.saldo_pensiones || 0) : "—"}</p>
+                                <p className="mt-1 text-sm text-slate-300">Saldo registrado en tu cuenta de pensionado</p>
+                            </article>
+                        </section>
 
-                <section className="mt-10 grid gap-8 lg:grid-cols-[1.15fr_0.85fr]">
-                    <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
-                        <div className="mb-5 flex items-center justify-between">
-                            <h2 className="text-2xl font-bold text-slate-900">Último consumo</h2>
-                            <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-emerald-700">
-                                Activo
-                            </span>
-                        </div>
-
-                        <div className="space-y-4">
-                            {consumo.map((item) => (
-                                <div key={`${item.fecha}-${item.descripcion}`} className="flex items-center justify-between rounded-2xl bg-slate-50 p-4">
-                                    <div>
-                                        <p className="text-sm text-slate-500">{item.fecha}</p>
-                                        <p className="font-semibold text-slate-800">{item.descripcion}</p>
-                                    </div>
-                                    <p className="text-lg font-bold text-slate-900">{item.monto}</p>
+                        <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
+                            <div className="flex flex-wrap items-end justify-between gap-3">
+                                <div>
+                                    <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Disponibilidad de hoy</p>
+                                    <h2 className="mt-1 text-2xl font-black">Platos disponibles</h2>
                                 </div>
-                            ))}
-                        </div>
-                    </div>
-
-                    <div className="rounded-3xl bg-gradient-to-br from-slate-900 via-slate-800 to-amber-700 p-6 text-white shadow-lg">
-                        <p className="text-sm uppercase tracking-[0.2em] text-amber-200">Resumen</p>
-                        <h2 className="mt-4 text-3xl font-black">Tu experiencia</h2>
-
-                        <div className="mt-8 space-y-5">
-                            <div>
-                                <p className="text-sm text-slate-200">Cuenta premium</p>
-                                <p className="mt-1 text-2xl font-bold">Activa</p>
+                                <p className="text-sm text-slate-500">{menuHoy.length} opciones disponibles</p>
                             </div>
-                            <div>
-                                <p className="text-sm text-slate-200">Próxima reserva</p>
-                                <p className="mt-1 text-2xl font-bold">Viernes 18:30</p>
+                            <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                                {menuHoy.map((plato) => (
+                                    <article key={`${plato.id_producto}-${plato.categoria}`} className="rounded-xl bg-slate-50 p-4">
+                                        <p className="text-xs font-bold uppercase text-amber-700">{plato.categoria}</p>
+                                        <h3 className="mt-1 font-bold">{plato.nombre}</h3>
+                                        <p className="mt-2 text-sm text-slate-600">{plato.stock} disponibles</p>
+                                        <p className="font-black">{moneda(plato.precio)}</p>
+                                    </article>
+                                ))}
+                                {!menuHoy.length && <p className="py-4 text-sm text-slate-500">No hay platos disponibles publicados para hoy.</p>}
                             </div>
-                            <div>
-                                <p className="text-sm text-slate-200">Historial</p>
-                                <p className="mt-1 text-2xl font-bold">12 visitas</p>
-                            </div>
-                        </div>
-                    </div>
-                </section>
+                        </section>
 
-                <section className="mt-10 grid gap-8 lg:grid-cols-[0.9fr_1.1fr]">
-                    <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
-                        <h3 className="text-2xl font-bold text-slate-900">Tu plan semanal</h3>
-                        <div className="mt-6 space-y-4">
-                            {planSemanal.map((item) => (
-                                <div key={item.dia} className="flex items-center justify-between rounded-2xl bg-slate-50 p-3">
-                                    <div>
-                                        <p className="text-sm text-slate-500">{item.dia}</p>
-                                        <p className="font-semibold text-slate-800">{item.comida}</p>
+                        <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
+                            <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Planificación</p>
+                            <h2 className="mt-1 text-2xl font-black">Menú semanal</h2>
+                            <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                                {semana.map((fecha) => (
+                                    <article key={fecha} className="rounded-xl border border-slate-100 p-4">
+                                        <h3 className="font-bold capitalize">{presentarFecha(fecha)}</h3>
+                                        <ul className="mt-3 space-y-2 text-sm">
+                                            {(menusSemana[fecha] || []).map((plato) => (
+                                                <li key={`${plato.id_producto}-${plato.categoria}`} className="flex justify-between gap-3">
+                                                    <span>{plato.nombre} <span className="text-slate-500">· {plato.categoria}</span></span>
+                                                    <span className="whitespace-nowrap text-slate-500">{plato.stock} disp.</span>
+                                                </li>
+                                            ))}
+                                            {!(menusSemana[fecha] || []).length && <li className="text-slate-500">Menú aún no publicado</li>}
+                                        </ul>
+                                    </article>
+                                ))}
+                            </div>
+                        </section>
+
+                        <section className="grid gap-6 lg:grid-cols-2">
+                            <article className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
+                                <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Hoy · {presentarFecha(hoy)}</p>
+                                <h2 className="mt-1 text-2xl font-black">Solicitar una reserva</h2>
+                                <p className="mt-2 text-sm text-slate-600">Tu solicitud queda pendiente hasta que el restaurante la confirme.</p>
+                                <form onSubmit={solicitarReserva} className="mt-5 space-y-4">
+                                    <label className="block text-sm font-semibold">Fecha
+                                        <input type="date" value={hoy} min={hoy} max={hoy} readOnly className="mt-1 w-full rounded-lg border bg-slate-50 p-3" />
+                                    </label>
+                                    <div className="grid gap-4 sm:grid-cols-2">
+                                        <label className="block text-sm font-semibold">Hora
+                                            <input required type="time" value={reserva.hora} onChange={(event) => setReserva({ ...reserva, hora: event.target.value })} className="mt-1 w-full rounded-lg border p-3" />
+                                        </label>
+                                        <label className="block text-sm font-semibold">Personas
+                                            <input required type="number" min="1" step="1" value={reserva.cantidad_personas} onChange={(event) => setReserva({ ...reserva, cantidad_personas: event.target.value })} className="mt-1 w-full rounded-lg border p-3" />
+                                        </label>
                                     </div>
-                                    <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-700">Confirmado</span>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
+                                    <label className="block text-sm font-semibold">Observación opcional
+                                        <textarea rows="2" value={reserva.observaciones} onChange={(event) => setReserva({ ...reserva, observaciones: event.target.value })} className="mt-1 w-full rounded-lg border p-3" />
+                                    </label>
+                                    <button disabled={guardando || usuario?.demo || !cuenta} className="w-full rounded-xl bg-amber-500 px-4 py-3 font-bold text-slate-950 disabled:opacity-50">
+                                        {guardando ? "Enviando solicitud…" : "Solicitar reserva"}
+                                    </button>
+                                </form>
+                            </article>
 
-                    <div className="rounded-3xl bg-gradient-to-br from-amber-50 to-orange-50 p-6 shadow-sm ring-1 ring-amber-100">
-                        <p className="text-sm uppercase tracking-[0.2em] text-amber-700">Recomendaciones</p>
-                        <h3 className="mt-3 text-2xl font-black text-slate-900">Próximas sugerencias</h3>
-                        <div className="mt-6 grid gap-4 sm:grid-cols-2">
-                            <div className="rounded-2xl bg-white p-4 shadow-sm">
-                                <p className="text-2xl">🍲</p>
-                                <p className="mt-3 font-bold text-slate-900">Menú saludable</p>
-                                <p className="text-sm text-slate-600">Perfecto para una comida ligera.</p>
+                            <article className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
+                                <h2 className="text-2xl font-black">Mis reservas</h2>
+                                <div className="mt-4 space-y-3">
+                                    {(cuenta?.reservas || []).map((item) => (
+                                        <div key={item.id_reserva} className="flex justify-between gap-3 rounded-xl bg-slate-50 p-4">
+                                            <div>
+                                                <p className="font-semibold capitalize">{presentarFecha(String(item.fecha).slice(0, 10))} · {String(item.hora).slice(0, 5)}</p>
+                                                <p className="text-sm text-slate-600">{item.cantidad_personas} personas{item.observaciones ? ` · ${item.observaciones}` : ""}</p>
+                                            </div>
+                                            <span className="h-fit rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-800">{item.estado}</span>
+                                        </div>
+                                    ))}
+                                    {!(cuenta?.reservas || []).length && <p className="py-4 text-sm text-slate-500">Aún no tienes reservas.</p>}
+                                </div>
+                            </article>
+                        </section>
+
+                        <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
+                            <h2 className="text-2xl font-black">Mis pedidos recientes</h2>
+                            <div className="mt-4 space-y-3">
+                                {(cuenta?.pedidos || []).map((pedido) => (
+                                    <article key={pedido.id_pedido} className="rounded-xl bg-slate-50 p-4">
+                                        <div className="flex flex-wrap justify-between gap-2">
+                                            <p className="font-bold">Pedido #{pedido.id_pedido} · {new Date(pedido.fecha).toLocaleDateString("es")}</p>
+                                            <span className="text-sm font-semibold">{pedido.pagado ? "Pagado" : "Pendiente de pago"} · {estadoBonito(pedido.estado)}</span>
+                                        </div>
+                                        <ul className="mt-2 text-sm text-slate-600">{(pedido.detalle || []).map((item, indice) => <li key={`${item.nombre}-${indice}`}>{item.cantidad} × {item.nombre}</li>)}</ul>
+                                    </article>
+                                ))}
+                                {!(cuenta?.pedidos || []).length && <p className="py-4 text-sm text-slate-500">No hay pedidos asociados a tu cuenta.</p>}
                             </div>
-                            <div className="rounded-2xl bg-white p-4 shadow-sm">
-                                <p className="text-2xl">🥂</p>
-                                <p className="mt-3 font-bold text-slate-900">Cena romántica</p>
-                                <p className="text-sm text-slate-600">Ideal para celebrar en pareja.</p>
-                            </div>
-                            <div className="rounded-2xl bg-white p-4 shadow-sm sm:col-span-2">
-                                <p className="text-2xl">🎁</p>
-                                <p className="mt-3 font-bold text-slate-900">Beneficio especial</p>
-                                <p className="text-sm text-slate-600">Acumulas puntos dobles en tus próximas visitas durante esta semana.</p>
-                            </div>
-                        </div>
-                    </div>
-                </section>
+                        </section>
+                    </>
+                )}
             </main>
         </div>
     );

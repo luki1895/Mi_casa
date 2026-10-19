@@ -22,7 +22,11 @@ const actualizar = async (datos) => {
 
         precio_segundo,
 
-        precio_plato_extra
+        precio_plato_extra,
+
+        precio_entrada,
+
+        precio_refresco
 
     } = datos;
 
@@ -40,7 +44,11 @@ const actualizar = async (datos) => {
 
         precio_segundo = $3,
 
-        precio_plato_extra = $4
+        precio_plato_extra = $4,
+
+        precio_entrada = $5,
+
+        precio_refresco = $6
 
         WHERE id_configuracion = 1
 
@@ -55,6 +63,10 @@ const actualizar = async (datos) => {
             precio_segundo,
 
             precio_plato_extra
+
+            ,precio_entrada
+
+            ,precio_refresco
 
         ]
 

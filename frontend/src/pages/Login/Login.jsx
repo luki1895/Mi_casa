@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import useAuth from "../../hooks/useAuth";
+import api from "../../api/axios";
 
 const usuariosDemo = [
     {
@@ -18,17 +19,32 @@ const usuariosDemo = [
         label: "Empleado",
     },
     {
-        username: "fernando",
-        password: "fernando",
-        name: "Fernando",
+        username: "mesero",
+        password: "mesero",
+        name: "Mesero de turno",
+        role: "mesero",
+        label: "Mesero (demo)",
+    },
+    {
+        username: "caja",
+        password: "caja",
+        name: "Caja de turno",
+        role: "caja",
+        label: "Caja (demo)",
+    },
+    {
+        username: "cliente",
+        password: "cliente",
+        name: "Cliente de prueba",
         role: "cliente",
-        label: "Cliente",
+        label: "Cliente (demo)",
     },
 ];
 
 function Login() {
     const [form, setForm] = useState({ username: "", password: "" });
     const [error, setError] = useState("");
+    const [cargando, setCargando] = useState(false);
     const navigate = useNavigate();
     const { login } = useAuth();
 
@@ -37,8 +53,9 @@ function Login() {
         setForm((prev) => ({ ...prev, [name]: value }));
     };
 
-    const handleSubmit = (event) => {
+    const handleSubmit = async (event) => {
         event.preventDefault();
+        setError("");
 
         const usuarioEncontrado = usuariosDemo.find(
             (usuario) =>
@@ -46,23 +63,43 @@ function Login() {
                 usuario.password === form.password.trim()
         );
 
-        if (!usuarioEncontrado) {
-            setError("Usuario o contraseña incorrectos.");
-            return;
+        setCargando(true);
+        try {
+            let sesion;
+
+            if (usuarioEncontrado) {
+                sesion = { ...usuarioEncontrado, demo: true };
+            } else {
+                const { data } = await api.post("/auth/login", {
+                    usuario: form.username.trim(),
+                    password: form.password,
+                });
+                const usuario = data.usuario;
+                const rol = String(usuario.rol || "").trim().toLowerCase();
+                const role = rol.includes("mesero") ? "mesero"
+                    : rol.includes("cliente") ? "cliente"
+                        : rol.includes("admin") || rol.includes("administrador") ? "admin"
+                            : rol.includes("caja") ? "caja" : "empleado";
+
+                sesion = {
+                    username: usuario.usuario,
+                    name: usuario.nombre || usuario.usuario,
+                    role,
+                    token: data.token,
+                    id: usuario.id_usuario,
+                };
+            }
+
+            login(sesion);
+            navigate(sesion.role === "cliente" ? "/cliente"
+                : sesion.role === "mesero" ? "/mesero"
+                    : sesion.role === "caja" ? "/caja"
+                        : sesion.role === "admin" ? "/dashboard" : "/login");
+        } catch {
+            setError("Usuario o contraseña incorrectos. Verifica tus datos e inténtalo nuevamente.");
+        } finally {
+            setCargando(false);
         }
-
-        login({
-            ...usuarioEncontrado,
-            username: usuarioEncontrado.username,
-            role: usuarioEncontrado.role,
-        });
-
-        if (usuarioEncontrado.role === "cliente") {
-            navigate("/cliente");
-            return;
-        }
-
-        navigate("/dashboard");
     };
 
     return (
@@ -123,7 +160,7 @@ function Login() {
                                 type="submit"
                                 className="w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-700"
                             >
-                                Entrar al sistema
+                                {cargando ? "Validando acceso..." : "Entrar al sistema"}
                             </button>
                         </form>
 
@@ -132,7 +169,9 @@ function Login() {
                             <ul className="mt-2 space-y-1">
                                 <li>Administrador: luis / luis</li>
                                 <li>Empleado: maria / maria</li>
-                                <li>Cliente: fernando / fernando</li>
+                                <li>Mesero demo: mesero / mesero</li>
+                                <li>Caja demo: caja / caja</li>
+                                <li>Cliente demo: cliente / cliente</li>
                             </ul>
                         </div>
                     </div>

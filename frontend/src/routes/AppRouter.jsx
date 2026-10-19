@@ -6,6 +6,7 @@ import ProtectedRoute from "./ProtectedRoute";
 import LandingPage from "../pages/Landing/LandingPage";
 import Login from "../pages/Login/Login";
 import ClientePortal from "../pages/ClientePortal/ClientePortal";
+import Mesero from "../pages/Mesero/Mesero";
 
 import Dashboard from "../pages/Dashboard/Dashboard";
 import Pedidos from "../pages/Pedidos/Pedidos";
@@ -34,21 +35,30 @@ function AppRouter() {
                 />
 
                 <Route
+                    path="/mesero"
                     element={
-                        <ProtectedRoute allowedRoles={["admin", "empleado"]}>
+                        <ProtectedRoute allowedRoles={["mesero"]}>
+                            <Mesero />
+                        </ProtectedRoute>
+                    }
+                />
+
+                <Route
+                    element={
+                        <ProtectedRoute allowedRoles={["admin", "caja", "empleado"]}>
                             <MainLayout />
                         </ProtectedRoute>
                     }
                 >
-                    <Route path="/dashboard" element={<Dashboard />} />
-                    <Route path="/usuarios" element={<Usuarios />} />
-                    <Route path="/clientes" element={<Clientes />} />
-                    <Route path="/menu" element={<Menu />} />
-                    <Route path="/pedidos" element={<Pedidos />} />
-                    <Route path="/caja" element={<Caja />} />
-                    <Route path="/produccion" element={<Produccion />} />
-                    <Route path="/reportes" element={<Reportes />} />
-                    <Route path="/configuracion" element={<Configuracion />} />
+                    <Route path="/dashboard" element={<ProtectedRoute allowedRoles={["admin"]}><Dashboard /></ProtectedRoute>} />
+                    <Route path="/usuarios" element={<ProtectedRoute allowedRoles={["admin"]}><Usuarios /></ProtectedRoute>} />
+                    <Route path="/clientes" element={<ProtectedRoute allowedRoles={["admin"]}><Clientes /></ProtectedRoute>} />
+                    <Route path="/menu" element={<ProtectedRoute allowedRoles={["admin"]}><Menu /></ProtectedRoute>} />
+                    <Route path="/pedidos" element={<ProtectedRoute allowedRoles={["admin"]}><Pedidos /></ProtectedRoute>} />
+                    <Route path="/caja" element={<ProtectedRoute allowedRoles={["admin", "caja"]}><Caja /></ProtectedRoute>} />
+                    <Route path="/produccion" element={<ProtectedRoute allowedRoles={["admin"]}><Produccion /></ProtectedRoute>} />
+                    <Route path="/reportes" element={<ProtectedRoute allowedRoles={["admin"]}><Reportes /></ProtectedRoute>} />
+                    <Route path="/configuracion" element={<ProtectedRoute allowedRoles={["admin"]}><Configuracion /></ProtectedRoute>} />
                 </Route>
 
                 <Route path="*" element={<Navigate to="/" replace />} />

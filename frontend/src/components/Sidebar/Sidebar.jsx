@@ -1,8 +1,12 @@
 import React from "react";
 import menuItems from "./menuItems";
 import MenuItem from "./MenuItem";
+import useAuth from "../../hooks/useAuth";
 
 const Sidebar = () => {
+  const { usuario } = useAuth();
+  const visibles = menuItems.filter((item) => item.roles?.includes(usuario?.role));
+
   return (
     <aside className="flex h-screen w-72 flex-col border-r border-slate-800 bg-slate-900 text-slate-200">
       <div className="border-b border-slate-800 p-6">
@@ -18,9 +22,9 @@ const Sidebar = () => {
       </div>
 
       <nav className="flex flex-1 flex-col gap-2 p-4">
-        {menuItems.map((item, index) => (
+        {visibles.map((item) => (
           <MenuItem
-            key={index}
+            key={item.path}
             icon={item.icon}
             title={item.title}
             path={item.path}

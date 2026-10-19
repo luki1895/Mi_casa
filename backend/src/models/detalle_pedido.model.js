@@ -1,10 +1,10 @@
 import pool from "../config/db.js";
 
-const crear=async(idPedido,detalle)=>{
+const crear=async(idPedido,detalle, db = pool)=>{
 
 for(const item of detalle){
 
-await pool.query(
+await db.query(
 
 `
 

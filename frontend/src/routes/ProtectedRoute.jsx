@@ -13,7 +13,15 @@ function ProtectedRoute({ children, allowedRoles = [] }) {
             return <Navigate to="/cliente" replace />;
         }
 
-        return <Navigate to="/dashboard" replace />;
+        if (usuario.role === "mesero") {
+            return <Navigate to="/mesero" replace />;
+        }
+
+        if (usuario.role === "caja") {
+            return <Navigate to="/caja" replace />;
+        }
+
+        return <Navigate to="/login" replace />;
     }
 
     return children;

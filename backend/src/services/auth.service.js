@@ -14,6 +14,10 @@ throw new Error("Usuario incorrecto");
 
 }
 
+if (usuario.estado === false || String(usuario.estado).toUpperCase() === "INACTIVO") {
+throw new Error("El usuario está desactivado");
+}
+
 const valido=await bcrypt.compare(
 
 datos.password,
@@ -48,11 +52,14 @@ expiresIn:"12h"
 
 );
 
+const usuarioPublico = { ...usuario };
+delete usuarioPublico.password;
+
 return{
 
 token,
 
-usuario
+usuario: usuarioPublico
 
 };
 

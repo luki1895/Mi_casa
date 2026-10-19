@@ -1,13 +1,43 @@
-import { dashboardCards, ultimosPedidos } from "../../data/DashboardData";
+import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import api from "../../api/axios";
 import DashboardCard from "../../components/dashboard/DashboardCard";
 
 const estadoColors = {
-    Entregado: "bg-emerald-100 text-emerald-700",
-    Preparando: "bg-amber-100 text-amber-700",
-    Pendiente: "bg-rose-100 text-rose-700",
+    ENTREGADO: "bg-emerald-100 text-emerald-700",
+    LISTO: "bg-emerald-100 text-emerald-700",
+    EN_PREPARACION: "bg-amber-100 text-amber-700",
+    PENDIENTE: "bg-rose-100 text-rose-700",
 };
 
 function Dashboard() {
+    const [resumen, setResumen] = useState(null);
+    const [error, setError] = useState("");
+
+    useEffect(() => {
+        api.get("/reportes/dashboard")
+            .then(({ data }) => setResumen(data.data))
+            .catch((requestError) => setError(requestError.response?.data?.mensaje || "No se pudo cargar el resumen desde PostgreSQL."));
+    }, []);
+
+    const dashboardCards = [
+        { id: 1, titulo: "Ventas cobradas", valor: `Bs ${Number(resumen?.ventas?.total || 0).toFixed(2)}`, color: "success" },
+        { id: 2, titulo: "Pedidos pagados", valor: resumen?.ventas?.cantidad || 0, color: "primary" },
+        { id: 3, titulo: "Gastos del día", valor: `Bs ${Number(resumen?.gastos?.total || 0).toFixed(2)}`, color: "warning" },
+        { id: 4, titulo: "Platos preparados", valor: resumen?.produccion?.preparados || 0, color: "danger" },
+        { id: 5, titulo: "Platos vendidos", valor: resumen?.produccion?.vendidos || 0, color: "info" },
+        { id: 6, titulo: "Platos reservados", valor: resumen?.produccion?.reservados || 0, color: "primary" },
+        { id: 7, titulo: "Platos disponibles", valor: resumen?.produccion?.disponibles || 0, color: "success" },
+        { id: 8, titulo: "Pendiente por cobrar", valor: `Bs ${Number(resumen?.ventas?.pendiente || 0).toFixed(2)}`, color: "warning" },
+    ];
+    const ultimosPedidos = resumen?.pedidosActivos || [];
+    const estadosPedidos = [
+        { label: "Listos para servir", value: ultimosPedidos.filter((pedido) => pedido.estado === "LISTO"), tone: "bg-emerald-500" },
+        { label: "En preparación", value: ultimosPedidos.filter((pedido) => pedido.estado === "EN_PREPARACION"), tone: "bg-amber-500" },
+        { label: "Pendientes", value: ultimosPedidos.filter((pedido) => pedido.estado === "PENDIENTE"), tone: "bg-rose-500" },
+    ];
+    const totalPedidosEnPanel = estadosPedidos.reduce((total, item) => total + item.value.length, 0);
+
     return (
         <div className="space-y-6">
             <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
@@ -15,8 +45,10 @@ function Dashboard() {
                     <p className="text-xs font-semibold uppercase tracking-[0.28em] text-amber-600">Dashboard</p>
                     <h2 className="mt-2 text-3xl font-black text-slate-900">Resumen del restaurante</h2>
                 </div>
-                <button className="premium-button">+ Nuevo pedido</button>
+                <Link to="/pedidos" className="premium-button">+ Nuevo pedido</Link>
             </div>
+
+            {error && <p role="alert" className="rounded-xl bg-rose-50 p-4 text-sm text-rose-800">{error}</p>}
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
                 {dashboardCards.map((item) => (
@@ -52,41 +84,38 @@ function Dashboard() {
                             </thead>
                             <tbody className="divide-y divide-slate-200 text-sm text-slate-700">
                                 {ultimosPedidos.map((pedido) => (
-                                    <tr key={pedido.id}>
-                                        <td className="px-4 py-3 font-medium">{pedido.hora}</td>
+                                    <tr key={pedido.id_pedido}>
+                                        <td className="px-4 py-3 font-medium">{new Date(pedido.fecha).toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" })}</td>
                                         <td className="px-4 py-3">{pedido.cliente}</td>
-                                        <td className="px-4 py-3">{pedido.tipo}</td>
+                                        <td className="px-4 py-3">{pedido.tipo_cliente}</td>
                                         <td className="px-4 py-3">
-                                            <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${estadoColors[pedido.estado]}`}>
+                                            <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${estadoColors[pedido.estado] || "bg-slate-100 text-slate-700"}`}>
                                                 {pedido.estado}
                                             </span>
                                         </td>
                                         <td className="px-4 py-3 font-bold text-slate-900">Bs {pedido.total}</td>
                                     </tr>
                                 ))}
+                                {ultimosPedidos.length === 0 && <tr><td colSpan="5" className="px-4 py-8 text-center text-slate-500">No hay pedidos activos hoy.</td></tr>}
                             </tbody>
                         </table>
                     </div>
                 </div>
 
                 <div className="soft-card p-6">
-                    <h3 className="text-xl font-bold text-slate-900">Estado de cocina</h3>
+                    <h3 className="text-xl font-bold text-slate-900">Estado de los últimos pedidos activos</h3>
 
                     <div className="mt-6 space-y-5">
-                        {[
-                            { label: "Listos para servir", value: "12", tone: "bg-emerald-100 text-emerald-700" },
-                            { label: "En preparación", value: "8", tone: "bg-amber-100 text-amber-700" },
-                            { label: "Pendientes", value: "4", tone: "bg-rose-100 text-rose-700" },
-                        ].map((item) => (
+                        {estadosPedidos.map((item) => (
                             <div key={item.label}>
                                 <div className="mb-2 flex items-center justify-between text-sm text-slate-600">
                                     <span>{item.label}</span>
-                                    <span className="font-bold text-slate-900">{item.value}</span>
+                                    <span className="font-bold text-slate-900">{item.value.length}</span>
                                 </div>
                                 <div className="h-2.5 rounded-full bg-slate-100">
                                     <div
                                         className={`h-2.5 rounded-full ${item.tone}`}
-                                        style={{ width: item.label === "Listos para servir" ? "80%" : item.label === "En preparación" ? "55%" : "35%" }}
+                                        style={{ width: `${totalPedidosEnPanel ? item.value.length / totalPedidosEnPanel * 100 : 0}%` }}
                                     />
                                 </div>
                             </div>
