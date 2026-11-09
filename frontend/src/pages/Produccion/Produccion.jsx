@@ -31,10 +31,7 @@ function Produccion() {
   const [error, setError] = useState("");
   const [aviso, setAviso] = useState("");
 
-  const cargar = useCallback(async () => {
-    setCargando(true);
-    setError("");
-    try {
+  const obtenerDatos = useCallback(async () => {
       const [produccionResponse, productosResponse, menuResponse] = await Promise.all([
         api.get(`/produccion?fecha=${fecha}`),
         api.get("/produccion/productos"),
@@ -47,17 +44,45 @@ function Produccion() {
         formulario[cantidadCampo] = Number(fila?.[cantidadCampo] ?? 0);
       });
       formulario.precio_extra = fila?.precio_extra ?? "";
-      setProduccion(formulario);
-      setProductos(productosResponse.data.data || []);
-      setDisponibilidad(menuResponse.data.data || []);
+      return {
+        produccion: formulario,
+        productos: productosResponse.data.data || [],
+        disponibilidad: menuResponse.data.data || [],
+      };
+  }, [fecha]);
+
+  const cargar = useCallback(async () => {
+    setCargando(true);
+    setError("");
+    try {
+      const datos = await obtenerDatos();
+      setProduccion(datos.produccion);
+      setProductos(datos.productos);
+      setDisponibilidad(datos.disponibilidad);
     } catch (requestError) {
       setError(requestError.response?.data?.mensaje || "No se pudo consultar la producción. Verifica que el backend y la migración estén activos.");
     } finally {
       setCargando(false);
     }
-  }, [fecha]);
+  }, [obtenerDatos]);
 
-  useEffect(() => { cargar(); }, [cargar]);
+  useEffect(() => {
+    let cancelado = false;
+    obtenerDatos()
+      .then((datos) => {
+        if (cancelado) return;
+        setProduccion(datos.produccion);
+        setProductos(datos.productos);
+        setDisponibilidad(datos.disponibilidad);
+      })
+      .catch((requestError) => {
+        if (!cancelado) setError(requestError.response?.data?.mensaje || "No se pudo consultar la producción. Verifica que el backend y la migración estén activos.");
+      })
+      .finally(() => {
+        if (!cancelado) setCargando(false);
+      });
+    return () => { cancelado = true; };
+  }, [obtenerDatos]);
 
   const totalPreparados = useMemo(() => campos.reduce(
     (total, [, , cantidadCampo]) => total + Number(produccion[cantidadCampo] || 0), 0

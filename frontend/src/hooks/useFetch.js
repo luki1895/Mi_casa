@@ -1,55 +1,44 @@
-import {useState,useEffect} from "react";
+import { useCallback, useEffect, useState } from "react";
 
-export default function useFetch(service){
+export default function useFetch(service) {
+    const [data, setData] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
 
-const[data,setData]=useState([]);
+    useEffect(() => {
+        let cancelado = false;
 
-const[loading,setLoading]=useState(true);
+        Promise.resolve()
+            .then(service)
+            .then((respuesta) => {
+                if (!cancelado) setData(respuesta.data);
+            })
+            .catch((requestError) => {
+                if (!cancelado) setError(requestError);
+            })
+            .finally(() => {
+                if (!cancelado) setLoading(false);
+            });
 
-const[error,setError]=useState(null);
+        return () => {
+            cancelado = true;
+        };
+    }, [service]);
 
-const cargar=async()=>{
+    const recargar = useCallback(async () => {
+        setLoading(true);
+        setError(null);
+        try {
+            const respuesta = await service();
+            setData(respuesta.data);
+            return respuesta.data;
+        } catch (requestError) {
+            setError(requestError);
+            throw requestError;
+        } finally {
+            setLoading(false);
+        }
+    }, [service]);
 
-try{
-
-setLoading(true);
-
-const respuesta=await service();
-
-setData(respuesta.data);
-
-}
-
-catch(err){
-
-setError(err);
-
-}
-
-finally{
-
-setLoading(false);
-
-}
-
-};
-
-useEffect(()=>{
-
-cargar();
-
-},[]);
-
-return{
-
-data,
-
-loading,
-
-error,
-
-recargar:cargar
-
-};
-
+    return { data, loading, error, recargar };
 }

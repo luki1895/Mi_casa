@@ -1,5 +1,7 @@
 import {createContext,useState} from "react";
 
+// The context is intentionally exported separately for consumers and hooks.
+// eslint-disable-next-line react-refresh/only-export-components
 export const SistemaContext=createContext();
 
 export function SistemaProvider({children}){

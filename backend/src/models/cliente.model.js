@@ -1,5 +1,13 @@
 import pool from "../config/db.js";
 
+const validarSaldo = (campo, valor) => {
+    if (valor === undefined || valor === null || valor === "") return;
+    const saldo = Number(valor);
+    if (!Number.isInteger(saldo) || saldo < 0) {
+        throw Object.assign(new Error(`El campo ${campo} debe ser un entero no negativo`), { status: 400 });
+    }
+};
+
 const listar = async () => {
 
     const { rows } = await pool.query(
@@ -32,7 +40,8 @@ const listarParaPedidos = async () => {
 
 const obtenerPortal = async (idUsuario) => {
     const clienteResult = await pool.query(
-        `SELECT c.id_cliente, c.nombre, c.telefono, c.tipo_cliente, c.saldo_pensiones
+        `SELECT c.id_cliente, c.nombre, c.telefono, c.tipo_cliente, c.saldo_pensiones,
+                c.saldo_sopas, c.saldo_segundos
          FROM usuario u
          INNER JOIN cliente c ON c.id_cliente=u.id_cliente
          WHERE u.id_usuario=$1 AND UPPER(c.estado::text) NOT IN ('INACTIVO','FALSE')`,
@@ -135,63 +144,33 @@ const obtener = async (id) => {
 };
 
 const crear = async (datos, db = pool) => {
-
     const {
-
         nombre,
-
         telefono,
-
         tipo_cliente,
-
         saldo_pensiones,
-
-        estado
-
+        saldo_sopas,
+        saldo_segundos,
+        estado,
     } = datos;
 
+    validarSaldo("saldo_sopas", saldo_sopas);
+    validarSaldo("saldo_segundos", saldo_segundos);
+
     const resultado = await db.query(
-
-        `
-
-        INSERT INTO cliente
-
-        (
-
-            nombre,
-
-            telefono,
-
-            tipo_cliente,
-
-            saldo_pensiones,
-
-            estado
-
-        )
-
-        VALUES
-
-        ($1, $2, $3, $4, $5)
-
-        RETURNING id_cliente
-
-        `,
-
+        `INSERT INTO cliente
+            (nombre, telefono, tipo_cliente, saldo_pensiones, saldo_sopas, saldo_segundos, estado)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         RETURNING id_cliente`,
         [
-
             nombre,
-
             telefono,
-
             tipo_cliente,
-
-            saldo_pensiones,
-
-            estado
-
+            saldo_pensiones ?? 0,
+            saldo_sopas === "" ? null : saldo_sopas ?? null,
+            saldo_segundos === "" ? null : saldo_segundos ?? null,
+            estado ?? true,
         ]
-
     );
 
     return resultado;
@@ -199,59 +178,35 @@ const crear = async (datos, db = pool) => {
 };
 
 const actualizar = async (id, datos) => {
+    const camposPermitidos = [
+        "nombre",
+        "telefono",
+        "tipo_cliente",
+        "saldo_pensiones",
+        "saldo_sopas",
+        "saldo_segundos",
+        "estado",
+    ];
+    const campos = [];
+    const valores = [];
 
-    const {
+    for (const campo of camposPermitidos) {
+        if (!Object.prototype.hasOwnProperty.call(datos, campo)) continue;
+        const valor = datos[campo];
+        if (campo === "saldo_sopas" || campo === "saldo_segundos") validarSaldo(campo, valor);
+        valores.push(valor === "" && (campo === "saldo_sopas" || campo === "saldo_segundos") ? null : valor);
+        campos.push(`${campo}=$${valores.length}`);
+    }
 
-        nombre,
+    if (!campos.length) {
+        return pool.query("SELECT id_cliente FROM cliente WHERE id_cliente=$1", [id]);
+    }
 
-        telefono,
-
-        tipo_cliente,
-
-        saldo_pensiones,
-
-        estado
-
-    } = datos;
-
+    valores.push(id);
     const resultado = await pool.query(
-
-        `
-
-        UPDATE cliente
-
-        SET
-
-        nombre=$1,
-
-        telefono=$2,
-
-        tipo_cliente=$3,
-
-        saldo_pensiones=$4,
-
-        estado=$5
-
-        WHERE id_cliente=$6
-
-        `,
-
-        [
-
-            nombre,
-
-            telefono,
-
-            tipo_cliente,
-
-            saldo_pensiones,
-
-            estado,
-
-            id
-
-        ]
-
+        `UPDATE cliente SET ${campos.join(", ")} WHERE id_cliente=$${valores.length}
+         RETURNING id_cliente`,
+        valores
     );
 
     return resultado;

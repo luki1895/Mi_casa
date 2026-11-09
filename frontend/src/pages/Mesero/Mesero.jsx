@@ -1,9 +1,20 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../../api/axios";
-import { menuHoy } from "../../data/menuMock";
-import { clientesMock } from "../../data/clientesMock";
 import useAuth from "../../hooks/useAuth";
+
+const menuDemo = [
+    { id_producto: 1, nombre: "Silpancho", categoria: "Segundo", precio: 15, stock: 30 },
+    { id_producto: 2, nombre: "Fricasé", categoria: "Segundo", precio: 15, stock: 20 },
+    { id_producto: 3, nombre: "Sopa de Maní", categoria: "Sopa", precio: 8, stock: 50 },
+    { id_producto: 4, nombre: "Mocochinchi", categoria: "Refresco", precio: 5, stock: 80 },
+];
+
+const clientesDemo = [
+    { id_cliente: 1, nombre: "Ana Flores", tipo_cliente: "REGISTRADO", estado: true },
+    { id_cliente: 2, nombre: "Carlos Vega", tipo_cliente: "REGISTRADO", estado: true },
+    { id_cliente: 3, nombre: "Rosa Quispe", tipo_cliente: "EVENTUAL", estado: true },
+];
 
 const DEMO_SERVICES_KEY = "mi_casa_servicios_demo";
 const money = (value) => `Bs ${Number(value || 0).toFixed(2)}`;
@@ -31,23 +42,10 @@ function Mesero() {
     const [aviso, setAviso] = useState("");
 
     const cargarDatos = useCallback(async () => {
-        setCargando(true);
-        setError("");
-
         if (usuario?.demo) {
-            setMenu(menuHoy.map((plato) => ({
-                id_producto: plato.id,
-                nombre: plato.nombre,
-                categoria: plato.categoria,
-                precio: plato.precio,
-                stock: 20,
-            })));
-            setClientes(clientesMock.map((cliente) => ({
-                id_cliente: cliente.id,
-                nombre: cliente.nombre,
-                tipo_cliente: cliente.tipo,
-                estado: cliente.estado,
-            })));
+            await Promise.resolve();
+            setMenu(menuDemo);
+            setClientes(clientesDemo);
             setServicios(JSON.parse(localStorage.getItem(DEMO_SERVICES_KEY) || "[]"));
             setPedidosActivos(JSON.parse(localStorage.getItem(DEMO_SERVICES_KEY) || "[]").filter((pedido) => !["ENTREGADO", "CANCELADO"].includes(pedido.estado)));
             setCargando(false);
@@ -75,7 +73,7 @@ function Mesero() {
     }, [usuario]);
 
     useEffect(() => {
-        cargarDatos();
+        Promise.resolve().then(cargarDatos);
     }, [cargarDatos]);
 
     const total = useMemo(

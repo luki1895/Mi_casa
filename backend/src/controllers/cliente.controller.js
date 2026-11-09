@@ -12,7 +12,7 @@ export const listar = async (req, res) => {
 
     } catch (error) {
 
-        response.error(res, error.message);
+        response.error(res, error.message, error.status || 500);
 
     }
 
@@ -28,7 +28,7 @@ export const obtener = async (req, res) => {
 
     } catch (error) {
 
-        response.error(res, error.message);
+        response.error(res, error.message, error.status || 500);
 
     }
 
@@ -44,7 +44,7 @@ export const crear = async (req, res) => {
 
     } catch (error) {
 
-        response.error(res, error.message);
+        response.error(res, error.message, error.status || 500);
 
     }
 
@@ -60,7 +60,7 @@ export const actualizar = async (req, res) => {
 
     } catch (error) {
 
-        response.error(res, error.message);
+        response.error(res, error.message, error.status || 500);
 
     }
 

@@ -2,6 +2,8 @@
   "name": "mi_casa",
   "private": true,
   "devDependencies": {
+    "@playwright/test": "^1.65.0",
+    "@types/node": "^26.6.6",
     "concurrently": "^10.0.4"
   },
   "scripts": {

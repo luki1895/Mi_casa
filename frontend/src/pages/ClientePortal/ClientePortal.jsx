@@ -157,9 +157,10 @@ function ClientePortal() {
                                 <p className="text-sm capitalize text-slate-300">{presentarFecha(hoy)}</p>
                             </div>
                         </div>
-                        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
                             {[
-                                ["Almuerzos restantes", cuenta ? Number(cuenta.saldo_pensiones || 0) : "—", "Saldo de tu cuenta"],
+                                ["Sopas", cuenta ? cuenta.saldo_sopas ?? "Sin asignar" : "—", "Créditos disponibles"],
+                                ["Segundos", cuenta ? cuenta.saldo_segundos ?? "Sin asignar" : "—", "Créditos disponibles"],
                                 ["Platos disponibles hoy", menuHoy.length, "Opciones publicadas"],
                                 ["Reserva de hoy", reservaHoy ? estadoBonito(reservaHoy.estado) : "Sin reserva", reservaHoy ? `${String(reservaHoy.hora).slice(0, 5)} · ${reservaHoy.cantidad_personas} personas` : "Puedes solicitar una reserva"],
                                 ["Pedidos recientes", (cuenta?.pedidos || []).length, "Pedidos asociados a tu cuenta"],

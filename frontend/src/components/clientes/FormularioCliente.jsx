@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 const estadoInicial = {
 
@@ -28,31 +28,15 @@ const estadoInicial = {
 
 };
 
-const FormularioCliente = ({
+const FormularioCliente = (props) => (
+    <FormularioClienteForm
+        key={props.cliente?.id_cliente ?? props.cliente?.id ?? "nuevo"}
+        {...props}
+    />
+);
 
-    cliente,
-
-    guardar,
-
-    cancelar
-
-})=>{
-
-const[formulario,setFormulario]=useState(estadoInicial);
-
-useEffect(()=>{
-
-if(cliente){
-
-setFormulario(cliente);
-
-}else{
-
-setFormulario(estadoInicial);
-
-}
-
-},[cliente]);
+function FormularioClienteForm({ cliente, guardar, cancelar }) {
+const [formulario, setFormulario] = useState(() => cliente || estadoInicial);
 
 const handleChange=(e)=>{
 

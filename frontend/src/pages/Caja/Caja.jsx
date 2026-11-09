@@ -11,9 +11,8 @@ const estadoBonito = (valor) => String(valor || "PENDIENTE").replaceAll("_", " "
 
 function Caja() {
     const { usuario } = useAuth();
-    const [seccionActiva, setSeccionActiva] = useState("DASHBOARD");
+    const [seccionActiva, setSeccionActiva] = useState("RESUMEN");
     const [panel, setPanel] = useState({ ventas: 0, gastos: 0, saldo_esperado: 0, pedidos_pendientes: 0, cierre: null, apertura: null, estado_caja: "SIN_ABRIR" });
-    const [reporte, setReporte] = useState({ fecha: "", pagos: [], gastos: [], total_pagos: 0, total_gastos: 0 });
     const [pedidos, setPedidos] = useState([]);
     const [clientes, setClientes] = useState([]);
     const [menu, setMenu] = useState([]);
@@ -46,7 +45,6 @@ function Caja() {
         setError("");
         if (usuario?.demo) {
             setPanel({ ventas: 0, gastos: 0, saldo_esperado: 0, pedidos_pendientes: 0, cierre: null, apertura: null, estado_caja: "SIN_ABRIR" });
-            setReporte({ fecha: obtenerFecha(), pagos: [], gastos: [], total_pagos: 0, total_gastos: 0 });
             setPedidos([]);
             setClientes([]);
             setMenu([]);
@@ -59,10 +57,10 @@ function Caja() {
         }
         try {
             const fecha = obtenerFecha();
-            const [panelRes, pedidosRes, clientesRes, menuRes, gastosRes, pagosRes, adicionalesRes, reporteRes] = await Promise.all([
+            const [panelRes, pedidosRes, clientesRes, menuRes, gastosRes, pagosRes, adicionalesRes] = await Promise.all([
                 api.get("/caja/panel"), api.get("/caja/pedidos"), api.get("/clientes/para-pedidos"),
                 api.get(`/produccion/menu?fecha=${fecha}`), api.get("/caja/gastos"), api.get("/caja/pagos"),
-                api.get("/caja/adicionales"), api.get("/caja/reportes"),
+                api.get("/caja/adicionales"),
             ]);
             setPanel(panelRes.data.data || {});
             setPedidos(pedidosRes.data.data || []);
@@ -71,7 +69,6 @@ function Caja() {
             setGastos(gastosRes.data.data || []);
             setPagos(pagosRes.data.data || []);
             setAdicionales(adicionalesRes.data.data || []);
-            setReporte(reporteRes.data.data || { fecha, pagos: [], gastos: [], total_pagos: 0, total_gastos: 0 });
         } catch (requestError) {
             setError(requestError.response?.data?.mensaje || "No se pudo cargar Caja. Comprueba la conexión y que se haya aplicado la migración PostgreSQL 001.");
         } finally {
@@ -79,7 +76,9 @@ function Caja() {
         }
     }, [usuario]);
 
-    useEffect(() => { cargar(); }, [cargar]);
+    useEffect(() => {
+        Promise.resolve().then(cargar);
+    }, [cargar]);
 
     const totalPedido = useMemo(() => carrito.reduce((suma, item) => suma + item.precio * item.cantidad, 0), [carrito]);
     const totalCobroActual = Number(solicitudCobro?.total || pedidoCobro?.saldo_pendiente || 0);
@@ -204,15 +203,15 @@ function Caja() {
 
     return (
         <div className="space-y-6">
-            <header className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-[0.25em] text-amber-700">Operaciones diarias</p><h1 className="mt-1 text-3xl font-black text-slate-900">Panel de Caja</h1><p className="mt-1 text-sm text-slate-500">Resumen del turno, gestión de Caja, pedidos y reportes por separado.</p></div><button onClick={cargar} className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold">Actualizar</button></header>
+            <header className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-[0.25em] text-amber-700">Operaciones diarias</p><h1 className="mt-1 text-3xl font-black text-slate-900">Caja</h1><p className="mt-1 text-sm text-slate-500">Resumen, turno, cobros y movimientos financieros.</p></div><button onClick={cargar} className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold">Actualizar</button></header>
             {error && <p role="alert" className="rounded-xl bg-rose-50 p-4 text-sm text-rose-800">{error}</p>}
             {aviso && <p role="status" className="rounded-xl bg-amber-50 p-4 text-sm text-amber-900">{aviso}</p>}
             <nav aria-label="Secciones de Caja" className="flex flex-wrap gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
                 {[
-                    ["DASHBOARD", "Dashboard"],
-                    ["CAJA", "1. Caja"],
-                    ["PEDIDOS", "2. Pedidos"],
-                    ["REPORTES", "3. Reportes"],
+                    ["RESUMEN", "Resumen"],
+                    ["TURNO", "Turno de caja"],
+                    ["COBROS", "Cobros"],
+                    ["MOVIMIENTOS", "Movimientos"],
                 ].map(([seccion, titulo]) => (
                     <button
                         key={seccion}
@@ -225,7 +224,7 @@ function Caja() {
                     </button>
                 ))}
             </nav>
-            {seccionActiva === "DASHBOARD" && (
+            {seccionActiva === "RESUMEN" && (
                 <div className="space-y-5">
                     <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
                         <div className="flex flex-wrap items-start justify-between gap-4">
@@ -263,7 +262,7 @@ function Caja() {
                                 <h3 className="font-black text-amber-950">Inicia el turno de Caja</h3>
                                 <p className="mt-1 text-sm text-amber-900">Registra el efectivo inicial desde la sección Caja para habilitar las operaciones del turno.</p>
                             </div>
-                            <button type="button" onClick={() => setSeccionActiva("CAJA")} className="rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-bold text-slate-950 hover:bg-amber-400">Ir a Caja</button>
+                            <button type="button" onClick={() => setSeccionActiva("TURNO")} className="rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-bold text-slate-950 hover:bg-amber-400">Ir a Caja</button>
                         </section>
                     )}
                     <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
@@ -273,15 +272,15 @@ function Caja() {
                                 <h2 className="mt-1 text-xl font-black text-slate-900">Tareas del área</h2>
                             </div>
                             <div className="flex flex-wrap gap-2">
-                                <button type="button" onClick={() => setSeccionActiva("CAJA")} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50">Apertura, gastos y cierre</button>
-                                <button type="button" onClick={() => setSeccionActiva("PEDIDOS")} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50">Registrar o cobrar pedidos</button>
-                                <button type="button" onClick={() => setSeccionActiva("REPORTES")} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50">Consultar reportes</button>
+                                <button type="button" onClick={() => setSeccionActiva("TURNO")} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50">Gestionar turno</button>
+                                <button type="button" onClick={() => setSeccionActiva("COBROS")} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50">Registrar o cobrar pedidos</button>
+                                <button type="button" onClick={() => setSeccionActiva("MOVIMIENTOS")} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50">Ver movimientos</button>
                             </div>
                         </div>
                     </section>
                 </div>
             )}
-            {seccionActiva === "CAJA" && (
+            {seccionActiva === "TURNO" && (
                 <>
             <section className="flex flex-col justify-between gap-4 rounded-2xl bg-white p-5 shadow-sm sm:flex-row sm:items-center">
                 <div>
@@ -298,28 +297,7 @@ function Caja() {
             <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                 {[['Ventas cobradas', panel.ventas], ['Gastos de hoy', panel.gastos], ['Saldo esperado en efectivo', panel.saldo_esperado]].map(([titulo, valor]) => <article key={titulo} className="rounded-2xl bg-white p-5 shadow-sm"><p className="text-sm text-slate-500">{titulo}</p><p className="mt-2 text-2xl font-black text-slate-900">{importe(valor)}</p></article>)}
             </section>
-            <section className="rounded-2xl bg-white p-5 shadow-sm">
-                <h2 className="text-xl font-black">Solicitudes adicionales por cobrar</h2>
-                <p className="mt-1 text-sm text-slate-500">Cobros adicionales solicitados por los meseros.</p>
-                <div className="mt-4 grid gap-3 md:grid-cols-2">
-                    {adicionales.map((solicitud) => <article key={solicitud.id_solicitud} className="rounded-xl border border-slate-100 p-4"><div className="flex justify-between"><b>Pedido #{solicitud.id_pedido} · {solicitud.cliente}</b><b>{importe(solicitud.total)}</b></div><ul className="my-2 text-sm text-slate-600">{solicitud.detalle.map((item, index) => <li key={`${item.id_producto}-${index}`}>{item.cantidad} × {item.nombre}</li>)}</ul>{solicitud.observaciones && <p className="mb-3 text-xs text-slate-500">Nota de cocina: {solicitud.observaciones}</p>}<button onClick={() => { setPedidoCobro(null); setSolicitudCobro(solicitud); setRecibido(String(solicitud.total)); }} className="rounded-lg bg-amber-500 px-3 py-2 text-xs font-black">Cobrar adicional</button></article>)}
-                    {!adicionales.length && <p className="py-4 text-sm text-slate-500">No hay cobros adicionales pendientes.</p>}
-                </div>
-                {ultimaComandaAdicional && <button onClick={() => imprimir(ultimaComandaAdicional)} className="mt-4 rounded-lg bg-slate-900 px-3 py-2 text-xs font-bold text-white">Imprimir última comanda adicional</button>}
-            </section>
-            <div className="grid gap-6 xl:grid-cols-2">
-                <section className="rounded-2xl bg-white p-5 shadow-sm">
-                    <h2 className="text-xl font-black">Registrar gasto</h2>
-                    <form onSubmit={registrarGasto} className="mt-4 grid gap-3 sm:grid-cols-2">
-                        <input required value={gasto.concepto} onChange={(event) => setGasto({ ...gasto, concepto: event.target.value })} placeholder="Concepto" className="rounded-xl border border-slate-200 px-3 py-3" />
-                        <input required type="number" min="0.01" step="0.01" value={gasto.total} onChange={(event) => setGasto({ ...gasto, total: event.target.value })} placeholder="Importe Bs" className="rounded-xl border border-slate-200 px-3 py-3" />
-                        <select value={gasto.metodo_pago} onChange={(event) => setGasto({ ...gasto, metodo_pago: event.target.value })} className="rounded-xl border border-slate-200 px-3 py-3">
-                            <option value="EFECTIVO">Salida de efectivo</option><option value="TARJETA">Tarjeta</option><option value="TRANSFERENCIA">Transferencia</option><option value="QR">QR</option>
-                        </select>
-                        <input value={gasto.descripcion} onChange={(event) => setGasto({ ...gasto, descripcion: event.target.value })} placeholder="Descripción opcional" className="rounded-xl border border-slate-200 px-3 py-3" />
-                        <button disabled={guardando || panel.estado_caja !== "ABIERTA"} className="rounded-xl bg-rose-700 px-4 py-3 font-bold text-white disabled:opacity-50 sm:col-span-2">Guardar gasto</button>
-                    </form>
-                </section>
+            <div className="grid gap-6">
                 <section className="rounded-2xl bg-white p-5 shadow-sm">
                     <h2 className="text-xl font-black">Cierre de caja</h2>
                     {panel.cierre ? (
@@ -344,7 +322,8 @@ function Caja() {
             </div>
                 </>
             )}
-            {seccionActiva === "PEDIDOS" && (
+            {seccionActiva === "COBROS" && (
+            <>
             <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
                 <section className="rounded-2xl bg-white p-5 shadow-sm">
                     <h2 className="text-xl font-black">Registrar pedido</h2>
@@ -360,25 +339,53 @@ function Caja() {
                 </section>
                 <section className="rounded-2xl bg-white p-5 shadow-sm">
                     <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-xl font-black">Pedidos y seguimiento</h2><p className="text-sm text-slate-500">Estados, cobros y comandas</p></div><input value={busqueda} onChange={(event) => setBusqueda(event.target.value)} placeholder="Buscar cliente o # pedido" className="rounded-xl border border-slate-200 px-3 py-2 text-sm" /></div>
-                    <div className="mt-4 space-y-3">{pedidosFiltrados.map((pedido) => <article key={pedido.id_pedido} className="rounded-xl border border-slate-100 p-4"><div className="flex flex-wrap items-start justify-between gap-2"><div><p className="font-black">#{pedido.id_pedido} · {pedido.cliente}</p><p className="mt-1 text-xs text-slate-500">{new Date(pedido.fecha).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })} · {estadoBonito(pedido.estado)}</p></div><b>{importe(pedido.total)}</b></div><ul className="mt-3 text-sm text-slate-600">{pedido.detalle.map((item, index) => <li key={`${item.id_producto}-${index}`}>{item.cantidad} × {item.nombre}</li>)}</ul>{pedido.observaciones && <p className="mt-2 text-xs text-slate-500">Nota cocina: {pedido.observaciones}</p>}<div className="mt-3 flex flex-wrap gap-2">{Number(pedido.saldo_pendiente) > 0 && <button onClick={() => { setPedidoCobro(pedido); setSolicitudCobro(null); setRecibido(String(pedido.saldo_pendiente)); setSeccionActiva("CAJA"); }} className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-bold">Pasar cobro a Caja</button>}{pedido.pagado && <button onClick={() => imprimir(pedido)} className="rounded-lg bg-slate-900 px-3 py-2 text-xs font-bold text-white">Imprimir comanda</button>}{pedido.estado === "PENDIENTE" && <button onClick={() => actualizarEstadoPedido(pedido, "EN_PREPARACION")} className="rounded-lg bg-amber-100 px-3 py-2 text-xs font-bold text-amber-900">Enviar a preparación</button>}{pedido.estado === "EN_PREPARACION" && <button onClick={() => actualizarEstadoPedido(pedido, "LISTO")} className="rounded-lg bg-blue-100 px-3 py-2 text-xs font-bold text-blue-900">Marcar listo</button>}{pedido.estado === "LISTO" && <button onClick={() => actualizarEstadoPedido(pedido, "ENTREGADO")} className="rounded-lg bg-emerald-100 px-3 py-2 text-xs font-bold text-emerald-900">Marcar entregado</button>}</div></article>)}{!pedidosFiltrados.length && <p className="py-8 text-center text-sm text-slate-500">No hay pedidos que coincidan.</p>}</div>
+                    <div className="mt-4 space-y-3">{pedidosFiltrados.map((pedido) => <article key={pedido.id_pedido} className="rounded-xl border border-slate-100 p-4"><div className="flex flex-wrap items-start justify-between gap-2"><div><p className="font-black">#{pedido.id_pedido} · {pedido.cliente}</p><p className="mt-1 text-xs text-slate-500">{new Date(pedido.fecha).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })} · {estadoBonito(pedido.estado)}</p></div><b>{importe(pedido.total)}</b></div><ul className="mt-3 text-sm text-slate-600">{pedido.detalle.map((item, index) => <li key={`${item.id_producto}-${index}`}>{item.cantidad} × {item.nombre}</li>)}</ul>{pedido.observaciones && <p className="mt-2 text-xs text-slate-500">Nota cocina: {pedido.observaciones}</p>}                    <div className="mt-3 flex flex-wrap gap-2">{Number(pedido.saldo_pendiente) > 0 && <button onClick={() => { setPedidoCobro(pedido); setSolicitudCobro(null); setRecibido(String(pedido.saldo_pendiente)); }} className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-bold">Cobrar saldo</button>}{pedido.pagado && <button onClick={() => imprimir(pedido)} className="rounded-lg bg-slate-900 px-3 py-2 text-xs font-bold text-white">Imprimir comanda</button>}{pedido.estado === "PENDIENTE" && <button onClick={() => actualizarEstadoPedido(pedido, "EN_PREPARACION")} className="rounded-lg bg-amber-100 px-3 py-2 text-xs font-bold text-amber-900">Enviar a preparación</button>}{pedido.estado === "EN_PREPARACION" && <button onClick={() => actualizarEstadoPedido(pedido, "LISTO")} className="rounded-lg bg-blue-100 px-3 py-2 text-xs font-bold text-blue-900">Marcar listo</button>}{pedido.estado === "LISTO" && <button onClick={() => actualizarEstadoPedido(pedido, "ENTREGADO")} className="rounded-lg bg-emerald-100 px-3 py-2 text-xs font-bold text-emerald-900">Marcar entregado</button>}</div></article>)}{!pedidosFiltrados.length && <p className="py-8 text-center text-sm text-slate-500">No hay pedidos que coincidan.</p>}</div>
                 </section>
             </div>
+            <section className="rounded-2xl bg-white p-5 shadow-sm">
+                <h2 className="text-xl font-black">Solicitudes adicionales por cobrar</h2>
+                <p className="mt-1 text-sm text-slate-500">Cobros adicionales solicitados por los meseros.</p>
+                <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    {adicionales.map((solicitud) => <article key={solicitud.id_solicitud} className="rounded-xl border border-slate-100 p-4"><div className="flex justify-between"><b>Pedido #{solicitud.id_pedido} · {solicitud.cliente}</b><b>{importe(solicitud.total)}</b></div><ul className="my-2 text-sm text-slate-600">{solicitud.detalle.map((item, index) => <li key={`${item.id_producto}-${index}`}>{item.cantidad} × {item.nombre}</li>)}</ul>{solicitud.observaciones && <p className="mb-3 text-xs text-slate-500">Nota de cocina: {solicitud.observaciones}</p>}<button onClick={() => { setPedidoCobro(null); setSolicitudCobro(solicitud); setRecibido(String(solicitud.total)); }} className="rounded-lg bg-amber-500 px-3 py-2 text-xs font-black">Cobrar adicional</button></article>)}
+                    {!adicionales.length && <p className="py-4 text-sm text-slate-500">No hay cobros adicionales pendientes.</p>}
+                </div>
+                {ultimaComandaAdicional && <button onClick={() => imprimir(ultimaComandaAdicional)} className="mt-4 rounded-lg bg-slate-900 px-3 py-2 text-xs font-bold text-white">Imprimir última comanda adicional</button>}
+            </section>
+            </>
             )}
-            {seccionActiva === "REPORTES" && (
+            {seccionActiva === "MOVIMIENTOS" && (
                 <section className="space-y-5">
-                    <p className="text-sm text-slate-500">Resumen financiero del {reporte.fecha ? new Date(`${reporte.fecha}T12:00:00`).toLocaleDateString("es") : "día actual"}.</p>
-                    <div className="grid gap-4 sm:grid-cols-2">
-                        <article className="rounded-2xl bg-white p-5 shadow-sm"><p className="text-sm text-slate-500">Pagos recibidos hoy</p><p className="mt-2 text-2xl font-black">{importe(reporte.total_pagos)}</p></article>
-                        <article className="rounded-2xl bg-white p-5 shadow-sm"><p className="text-sm text-slate-500">Gastos registrados hoy</p><p className="mt-2 text-2xl font-black">{importe(reporte.total_gastos)}</p></article>
+                    <article className="rounded-2xl bg-white p-5 shadow-sm">
+                        <h2 className="text-xl font-black">Registrar gasto</h2>
+                        <form onSubmit={registrarGasto} className="mt-4 grid gap-3 sm:grid-cols-2">
+                            <input required value={gasto.concepto} onChange={(event) => setGasto({ ...gasto, concepto: event.target.value })} placeholder="Concepto" className="rounded-xl border border-slate-200 px-3 py-3" />
+                            <input required type="number" min="0.01" step="0.01" value={gasto.total} onChange={(event) => setGasto({ ...gasto, total: event.target.value })} placeholder="Importe Bs" className="rounded-xl border border-slate-200 px-3 py-3" />
+                            <select value={gasto.metodo_pago} onChange={(event) => setGasto({ ...gasto, metodo_pago: event.target.value })} className="rounded-xl border border-slate-200 px-3 py-3">
+                                <option value="EFECTIVO">Salida de efectivo</option><option value="TARJETA">Tarjeta</option><option value="TRANSFERENCIA">Transferencia</option><option value="QR">QR</option>
+                            </select>
+                            <input value={gasto.descripcion} onChange={(event) => setGasto({ ...gasto, descripcion: event.target.value })} placeholder="Descripción opcional" className="rounded-xl border border-slate-200 px-3 py-3" />
+                            <button disabled={guardando || panel.estado_caja !== "ABIERTA"} className="rounded-xl bg-rose-700 px-4 py-3 font-bold text-white disabled:opacity-50 sm:col-span-2">Guardar gasto</button>
+                        </form>
+                    </article>
+                    <div className="grid gap-5 xl:grid-cols-2">
+                    <article className="rounded-2xl bg-white p-5 shadow-sm">
+                        <h2 className="text-xl font-black">Ingresos registrados</h2>
+                        <div className="mt-3 max-h-96 overflow-auto">
+                            {pagos.map((pago) => <p key={pago.id_pago} className="flex justify-between gap-3 border-t py-2 text-sm"><span>Pedido #{pago.id_pedido} · {pago.metodo} · {new Date(pago.fecha).toLocaleString("es")}</span><b>{importe(pago.monto)}</b></p>)}
+                            {!pagos.length && <p className="py-4 text-sm text-slate-500">No hay pagos registrados.</p>}
+                        </div>
+                    </article>
+                    <article className="rounded-2xl bg-white p-5 shadow-sm">
+                        <h2 className="text-xl font-black">Egresos registrados</h2>
+                        <div className="mt-3 max-h-96 overflow-auto">
+                            {gastos.map((item) => <p key={item.id_gasto} className="flex justify-between gap-3 border-t py-2 text-sm"><span>{item.concepto} · {item.metodo_pago} · {new Date(item.fecha).toLocaleString("es")}</span><b>{importe(item.total)}</b></p>)}
+                            {!gastos.length && <p className="py-4 text-sm text-slate-500">No hay gastos registrados.</p>}
+                        </div>
+                    </article>
                     </div>
-                    <div className="grid gap-5 md:grid-cols-2">
-                        <article className="rounded-2xl bg-white p-5 shadow-sm"><h2 className="text-xl font-black">Pagos por método</h2><div className="mt-3 space-y-2">{reporte.pagos.map((item) => <p key={item.metodo} className="flex justify-between border-b py-2 text-sm"><span>{item.metodo} · {item.cantidad} pagos</span><b>{importe(item.total)}</b></p>)}{!reporte.pagos.length && <p className="py-3 text-sm text-slate-500">No hay pagos registrados hoy.</p>}</div></article>
-                        <article className="rounded-2xl bg-white p-5 shadow-sm"><h2 className="text-xl font-black">Gastos por método de salida</h2><div className="mt-3 space-y-2">{reporte.gastos.map((item) => <p key={item.metodo} className="flex justify-between border-b py-2 text-sm"><span>{item.metodo} · {item.cantidad} gastos</span><b>{importe(item.total)}</b></p>)}{!reporte.gastos.length && <p className="py-3 text-sm text-slate-500">No hay gastos registrados hoy.</p>}</div></article>
-                    </div>
-                    <article className="rounded-2xl bg-white p-5 shadow-sm"><h2 className="text-xl font-black">Movimientos de pago recientes</h2><div className="mt-3 max-h-96 overflow-auto">{pagos.map((pago) => <p key={pago.id_pago} className="flex justify-between gap-3 border-t py-2 text-sm"><span>Pedido #{pago.id_pedido} · {pago.metodo} · {new Date(pago.fecha).toLocaleString("es")}</span><b>{importe(pago.monto)}</b></p>)}{!pagos.length && <p className="py-4 text-sm text-slate-500">No hay pagos registrados en el periodo consultado.</p>}</div></article>
                 </section>
             )}
-            {seccionActiva === "CAJA" && (pedidoCobro || solicitudCobro) && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4"><form onSubmit={confirmarPago} className="w-full max-w-md space-y-4 rounded-2xl bg-white p-6 shadow-xl"><div><p className="text-xs uppercase tracking-widest text-amber-700">{solicitudCobro ? "Cobro adicional" : "Cobro de pedido"}</p><h2 className="mt-1 text-2xl font-black">#{pedidoCobro?.id_pedido || solicitudCobro?.id_pedido} · {pedidoCobro?.cliente || solicitudCobro?.cliente}</h2></div><p>Importe pendiente: <b>{importe(totalCobroActual)}</b></p><label className="block text-sm font-semibold">Método<select value={metodo} onChange={(event) => setMetodo(event.target.value)} className="mt-1 w-full rounded-lg border p-3">{['EFECTIVO','TARJETA','TRANSFERENCIA','QR'].map((opcion) => <option key={opcion}>{opcion}</option>)}</select></label><label className="block text-sm font-semibold">Importe recibido<input autoFocus required type="number" min={totalCobroActual} step="0.01" value={recibido} onChange={(event) => setRecibido(event.target.value)} className="mt-1 w-full rounded-lg border p-3" /></label><p className="text-sm">Cambio: <b>{metodo === 'EFECTIVO' ? importe(cambio) : importe(0)}</b></p><div className="flex gap-3"><button type="button" onClick={() => { setPedidoCobro(null); setSolicitudCobro(null); }} className="w-full rounded-xl border px-4 py-3 font-bold">Cancelar</button><button disabled={guardando} className="w-full rounded-xl bg-emerald-700 px-4 py-3 font-bold text-white">Confirmar pago</button></div></form></div>}
+            {(pedidoCobro || solicitudCobro) && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4"><form onSubmit={confirmarPago} className="w-full max-w-md space-y-4 rounded-2xl bg-white p-6 shadow-xl"><div><p className="text-xs uppercase tracking-widest text-amber-700">{solicitudCobro ? "Cobro adicional" : "Cobro de pedido"}</p><h2 className="mt-1 text-2xl font-black">#{pedidoCobro?.id_pedido || solicitudCobro?.id_pedido} · {pedidoCobro?.cliente || solicitudCobro?.cliente}</h2></div><p>Importe pendiente: <b>{importe(totalCobroActual)}</b></p><label className="block text-sm font-semibold">Método<select value={metodo} onChange={(event) => setMetodo(event.target.value)} className="mt-1 w-full rounded-lg border p-3">{['EFECTIVO','TARJETA','TRANSFERENCIA','QR'].map((opcion) => <option key={opcion}>{opcion}</option>)}</select></label><label className="block text-sm font-semibold">Importe recibido<input autoFocus required type="number" min={totalCobroActual} step="0.01" value={recibido} onChange={(event) => setRecibido(event.target.value)} className="mt-1 w-full rounded-lg border p-3" /></label><p className="text-sm">Cambio: <b>{metodo === 'EFECTIVO' ? importe(cambio) : importe(0)}</b></p><div className="flex gap-3"><button type="button" onClick={() => { setPedidoCobro(null); setSolicitudCobro(null); }} className="w-full rounded-xl border px-4 py-3 font-bold">Cancelar</button><button disabled={guardando} className="w-full rounded-xl bg-emerald-700 px-4 py-3 font-bold text-white">Confirmar pago</button></div></form></div>}
         </div>
     );
 }

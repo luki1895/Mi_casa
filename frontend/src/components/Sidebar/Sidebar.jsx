@@ -1,11 +1,12 @@
-import React from "react";
 import menuItems from "./menuItems";
 import MenuItem from "./MenuItem";
 import useAuth from "../../hooks/useAuth";
+import { normalizeRole } from "../../auth/roles";
 
 const Sidebar = () => {
   const { usuario } = useAuth();
-  const visibles = menuItems.filter((item) => item.roles?.includes(usuario?.role));
+  const role = normalizeRole(usuario?.role ?? usuario?.rol);
+  const visibles = menuItems.filter((item) => item.roles?.map(normalizeRole).includes(role));
 
   return (
     <aside className="flex h-screen w-72 flex-col border-r border-slate-800 bg-slate-900 text-slate-200">

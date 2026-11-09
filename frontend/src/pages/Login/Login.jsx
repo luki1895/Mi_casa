@@ -2,6 +2,9 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import useAuth from "../../hooks/useAuth";
 import api from "../../api/axios";
+import { normalizeRole } from "../../auth/roles";
+
+const demoLoginEnabled = import.meta.env.VITE_ENABLE_DEMO_LOGIN === "true";
 
 const usuariosDemo = [
     {
@@ -57,7 +60,7 @@ function Login() {
         event.preventDefault();
         setError("");
 
-        const usuarioEncontrado = usuariosDemo.find(
+        const usuarioEncontrado = demoLoginEnabled && usuariosDemo.find(
             (usuario) =>
                 usuario.username === form.username.trim().toLowerCase() &&
                 usuario.password === form.password.trim()
@@ -75,11 +78,10 @@ function Login() {
                     password: form.password,
                 });
                 const usuario = data.usuario;
-                const rol = String(usuario.rol || "").trim().toLowerCase();
-                const role = rol.includes("mesero") ? "mesero"
-                    : rol.includes("cliente") ? "cliente"
-                        : rol.includes("admin") || rol.includes("administrador") ? "admin"
-                            : rol.includes("caja") ? "caja" : "empleado";
+                const role = normalizeRole(usuario.rol);
+                if (!["admin", "caja", "mesero", "cliente", "empleado"].includes(role)) {
+                    throw new Error("El rol de esta cuenta no está reconocido.");
+                }
 
                 sesion = {
                     username: usuario.usuario,
@@ -95,8 +97,10 @@ function Login() {
                 : sesion.role === "mesero" ? "/mesero"
                     : sesion.role === "caja" ? "/caja"
                         : sesion.role === "admin" ? "/dashboard" : "/login");
-        } catch {
-            setError("Usuario o contraseña incorrectos. Verifica tus datos e inténtalo nuevamente.");
+        } catch (requestError) {
+            setError(requestError.message === "El rol de esta cuenta no está reconocido."
+                ? requestError.message
+                : "Usuario o contraseña incorrectos. Verifica tus datos e inténtalo nuevamente.");
         } finally {
             setCargando(false);
         }
@@ -164,7 +168,7 @@ function Login() {
                             </button>
                         </form>
 
-                        <div className="mt-8 rounded-2xl bg-amber-50 p-4 text-sm text-slate-700">
+                        {demoLoginEnabled && <div className="mt-8 rounded-2xl bg-amber-50 p-4 text-sm text-slate-700">
                             <p className="font-semibold text-slate-900">Cuentas demo:</p>
                             <ul className="mt-2 space-y-1">
                                 <li>Administrador: luis / luis</li>
@@ -173,7 +177,7 @@ function Login() {
                                 <li>Caja demo: caja / caja</li>
                                 <li>Cliente demo: cliente / cliente</li>
                             </ul>
-                        </div>
+                        </div>}
                     </div>
                 </div>
             </div>

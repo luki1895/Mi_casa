@@ -1,16 +1,27 @@
 const normalizarRol = (rol = "") => {
-    const valor = String(rol).trim().toLowerCase();
-    if (valor.includes("admin")) return "admin";
-    if (valor.includes("caja")) return "caja";
-    if (valor.includes("mesero")) return "mesero";
-    if (valor.includes("cliente")) return "cliente";
-    if (valor.includes("empleado")) return "empleado";
-    return valor;
+    const valor = String(rol)
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .trim()
+        .toLowerCase()
+        .replace(/[\s_-]+/g, " ");
+    const roles = {
+        admin: "admin",
+        administrador: "admin",
+        administrator: "admin",
+        caja: "caja",
+        cajero: "caja",
+        mesero: "mesero",
+        mesera: "mesero",
+        cliente: "cliente",
+        empleado: "empleado",
+    };
+    return roles[valor] || valor;
 };
 
 const autorizarRoles = (...rolesPermitidos) => (req, res, next) => {
-    const rol = normalizarRol(req.usuario?.rol);
-    if (!rolesPermitidos.includes(rol)) {
+    const rol = normalizarRol(req.usuario?.rol ?? req.usuario?.role);
+    if (!rolesPermitidos.map(normalizarRol).includes(rol)) {
         return res.status(403).json({
             ok: false,
             mensaje: "No tienes permiso para realizar esta operación",

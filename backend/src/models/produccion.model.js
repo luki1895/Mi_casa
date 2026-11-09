@@ -192,7 +192,7 @@ const crear=async(datos, idUsuario)=>{
 		if (existente.rowCount) {
 			resultado = await client.query(
 				`UPDATE produccion_diaria SET
-				 id_sopa=$2, id_segundo1=$3, id_segundo2=$4, id_entrada=$5,
+				 fecha=$1, id_sopa=$2, id_segundo1=$3, id_segundo2=$4, id_entrada=$5,
 				 id_refresco=$6, id_plato_extra=$7, cantidad_sopa=$8,
 				 cantidad_segundo1=$9, cantidad_segundo2=$10, cantidad_entrada=$11,
 				 cantidad_refresco=$12, cantidad_extra=$13, precio_extra=$14
