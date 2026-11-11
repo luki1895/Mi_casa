@@ -4,45 +4,7 @@ import useAuth from "../../hooks/useAuth";
 import api from "../../api/axios";
 import { normalizeRole } from "../../auth/roles";
 
-const demoLoginEnabled = import.meta.env.VITE_ENABLE_DEMO_LOGIN === "true";
-
-const usuariosDemo = [
-    {
-        username: "luis",
-        password: "luis",
-        name: "Luis",
-        role: "admin",
-        label: "Administrador",
-    },
-    {
-        username: "maria",
-        password: "maria",
-        name: "María",
-        role: "empleado",
-        label: "Empleado",
-    },
-    {
-        username: "mesero",
-        password: "mesero",
-        name: "Mesero de turno",
-        role: "mesero",
-        label: "Mesero (demo)",
-    },
-    {
-        username: "caja",
-        password: "caja",
-        name: "Caja de turno",
-        role: "caja",
-        label: "Caja (demo)",
-    },
-    {
-        username: "cliente",
-        password: "cliente",
-        name: "Cliente de prueba",
-        role: "cliente",
-        label: "Cliente (demo)",
-    },
-];
+const demoCredentialsVisible = import.meta.env.DEV || import.meta.env.VITE_ENABLE_DEMO_LOGIN === "true";
 
 function Login() {
     const [form, setForm] = useState({ username: "", password: "" });
@@ -60,37 +22,25 @@ function Login() {
         event.preventDefault();
         setError("");
 
-        const usuarioEncontrado = demoLoginEnabled && usuariosDemo.find(
-            (usuario) =>
-                usuario.username === form.username.trim().toLowerCase() &&
-                usuario.password === form.password.trim()
-        );
-
         setCargando(true);
         try {
-            let sesion;
-
-            if (usuarioEncontrado) {
-                sesion = { ...usuarioEncontrado, demo: true };
-            } else {
-                const { data } = await api.post("/auth/login", {
-                    usuario: form.username.trim(),
-                    password: form.password,
-                });
-                const usuario = data.usuario;
-                const role = normalizeRole(usuario.rol);
-                if (!["admin", "caja", "mesero", "cliente", "empleado"].includes(role)) {
-                    throw new Error("El rol de esta cuenta no está reconocido.");
-                }
-
-                sesion = {
-                    username: usuario.usuario,
-                    name: usuario.nombre || usuario.usuario,
-                    role,
-                    token: data.token,
-                    id: usuario.id_usuario,
-                };
+            const { data } = await api.post("/auth/login", {
+                usuario: form.username.trim(),
+                password: form.password,
+            });
+            const usuario = data.usuario;
+            const role = normalizeRole(usuario.rol);
+            if (!["admin", "caja", "mesero", "cliente", "empleado"].includes(role)) {
+                throw new Error("El rol de esta cuenta no está reconocido.");
             }
+
+            const sesion = {
+                username: usuario.usuario,
+                name: usuario.nombre || usuario.usuario,
+                role,
+                token: data.token,
+                id: usuario.id_usuario,
+            };
 
             login(sesion);
             navigate(sesion.role === "cliente" ? "/cliente"
@@ -98,9 +48,13 @@ function Login() {
                     : sesion.role === "caja" ? "/caja"
                         : sesion.role === "admin" ? "/dashboard" : "/login");
         } catch (requestError) {
-            setError(requestError.message === "El rol de esta cuenta no está reconocido."
-                ? requestError.message
-                : "Usuario o contraseña incorrectos. Verifica tus datos e inténtalo nuevamente.");
+            if (requestError.message === "El rol de esta cuenta no está reconocido.") {
+                setError(requestError.message);
+            } else if (requestError.response) {
+                setError(requestError.response.data?.mensaje || "No se pudo iniciar sesión. Inténtalo nuevamente.");
+            } else {
+                setError("No se pudo conectar con el servidor. Verifica la conexión e inténtalo nuevamente.");
+            }
         } finally {
             setCargando(false);
         }
@@ -168,11 +122,11 @@ function Login() {
                             </button>
                         </form>
 
-                        {demoLoginEnabled && <div className="mt-8 rounded-2xl bg-amber-50 p-4 text-sm text-slate-700">
+                        {demoCredentialsVisible && <div className="mt-8 rounded-2xl bg-amber-50 p-4 text-sm text-slate-700">
                             <p className="font-semibold text-slate-900">Cuentas demo:</p>
                             <ul className="mt-2 space-y-1">
                                 <li>Administrador: luis / luis</li>
-                                <li>Empleado: maria / maria</li>
+                                <li>Mesero: maria / maria</li>
                                 <li>Mesero demo: mesero / mesero</li>
                                 <li>Caja demo: caja / caja</li>
                                 <li>Cliente demo: cliente / cliente</li>

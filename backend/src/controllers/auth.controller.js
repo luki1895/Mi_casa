@@ -12,9 +12,9 @@ res.json(resultado);
 
 catch(error){
 
-res.status(401).json({
+res.status(error.status || 500).json({
 
-mensaje:error.message
+mensaje:error.status ? error.message : "No se pudo iniciar sesión"
 
 });
 

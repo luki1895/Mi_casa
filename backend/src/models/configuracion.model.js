@@ -1,14 +1,39 @@
 import pool from "../config/db.js";
 
 const obtener = async () => {
-
-    const { rows } = await pool.query(
-
-        "SELECT * FROM configuracion LIMIT 1"
-
+    const existente = await pool.query(
+        "SELECT * FROM configuracion LIMIT 1",
     );
 
-    return rows[0];
+    if (existente.rows[0]) {
+        return existente.rows[0];
+    }
+
+    const insertada = await pool.query(
+        `INSERT INTO configuracion (
+            id_configuracion,
+            precio_almuerzo,
+            precio_sopa,
+            precio_segundo,
+            precio_plato_extra,
+            precio_entrada,
+            precio_refresco
+        )
+        VALUES (1, 0, 0, 0, 0, 0, 0)
+        ON CONFLICT (id_configuracion)
+        DO NOTHING
+        RETURNING *`
+    );
+
+    if (insertada.rows[0]) {
+        return insertada.rows[0];
+    }
+
+    const resultado = await pool.query(
+        "SELECT * FROM configuracion LIMIT 1",
+    );
+
+    return resultado.rows[0];
 
 };
 

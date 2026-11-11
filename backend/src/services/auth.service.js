@@ -10,12 +10,12 @@ const usuario=await authModel.buscarUsuario(datos.usuario);
 
 if(!usuario){
 
-throw new Error("Usuario incorrecto");
+throw Object.assign(new Error("Usuario o contraseña incorrectos"), { status: 401 });
 
 }
 
 if (usuario.estado === false || String(usuario.estado).toUpperCase() === "INACTIVO") {
-throw new Error("El usuario está desactivado");
+throw Object.assign(new Error("El usuario está desactivado"), { status: 403 });
 }
 
 const valido=await bcrypt.compare(
@@ -28,7 +28,7 @@ usuario.password
 
 if(!valido){
 
-throw new Error("Contraseña incorrecta");
+throw Object.assign(new Error("Usuario o contraseña incorrectos"), { status: 401 });
 
 }
 
