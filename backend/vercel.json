@@ -1,1 +1,1 @@
-﻿{"$schema":"https://openapi.vercel.sh/vercel.json","functions":{"src/index.js":{"includeFiles":"prod-ca-2021.crt"}}}
+{"functions":{"src/index.js":{"includeFiles":"prod-ca-2021.crt"}}}
