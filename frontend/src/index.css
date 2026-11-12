@@ -1,22 +1,22 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Cormorant+Garamond:wght@500;600;700&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  --bg-soft: #f8f5f2;
+  --bg-soft: #f7f3ee;
   --bg-card: #ffffff;
-  --text: #1f2937;
-  --muted: #64748b;
-  --primary: #b45309;
-  --primary-dark: #92400e;
-  --line: #e7e5e4;
+  --primary: #b85c3b;
+  --primary-dark: #8f422d;
+  --primary-soft: #f7d9b0;
+  --text: #1f1a17;
+  --muted: #5f4d48;
+  --line: #eaded2;
+  --shadow-soft: 0 18px 50px rgba(97, 58, 40, 0.12);
 }
 
 * {
-  margin: 0;
-  padding: 0;
   box-sizing: border-box;
 }
 
@@ -25,6 +25,7 @@ html {
 }
 
 body {
+  margin: 0;
   font-family: 'Inter', sans-serif;
   background: var(--bg-soft);
   color: var(--text);
@@ -32,12 +33,26 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+img {
+  max-width: 100%;
+  display: block;
+}
+
+button,
+a {
+  transition: all 180ms ease;
+}
+
 #root {
   min-height: 100vh;
 }
 
+.font-script {
+  font-family: 'Cormorant Garamond', serif;
+}
+
 .soft-card {
-  @apply rounded-2xl border border-border bg-white shadow-card;
+  @apply rounded-[28px] border border-[#eaded2] bg-white shadow-[0_18px_50px_rgba(97,58,40,0.08)];
 }
 
 .section-title {
@@ -45,9 +60,9 @@ body {
 }
 
 .premium-button {
-  @apply inline-flex items-center justify-center rounded-full bg-primary px-6 py-3 text-sm font-semibold text-white transition hover:bg-primaryDark;
+  @apply inline-flex items-center justify-center rounded-full bg-[#b85c3b] px-6 py-3 text-sm font-semibold text-white transition hover:bg-[#8f422d];
 }
 
 .secondary-button {
-  @apply inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-800 transition hover:bg-slate-50;
+  @apply inline-flex items-center justify-center rounded-full border border-[#e7d8c9] bg-white px-6 py-3 text-sm font-semibold text-slate-800 transition hover:bg-[#f7f3ee];
 }

@@ -1,66 +1,82 @@
-﻿# Supabase y pgAdmin - Restaurante Mi Casa
+# Supabase y PostgreSQL - Mi Casa
 
-## 1. Configuracion de PostgreSQL
+## 1. Objetivo
 
-El proyecto utiliza PostgreSQL alojado en Supabase.
+Usar una sola base de datos PostgreSQL limpia en Supabase y mantener una conexión consistente entre local y despliegue.
 
-Variables necesarias en backend/.env:
+No mezclar proyectos, URLs antiguas, conexiones de pgAdmin viejas ni variables de entorno duplicadas.
 
-- DATABASE_URL: URI de conexion PostgreSQL proporcionada por Supabase.
-- PGSSLROOTCERT: prod-ca-2021.crt
+## 2. Variables necesarias
 
-No guardar contrasenas ni claves secretas en el repositorio.
+En `backend/.env` usa:
 
-## 2. Certificado SSL
+```env
+DATABASE_URL=postgresql://postgres:TU_PASSWORD@db.TU_PROJECT_REF.supabase.co:5432/postgres?sslmode=require
+PGSSLROOTCERT=prod-ca-2021.crt
+```
 
-El certificado debe encontrarse en backend/prod-ca-2021.crt.
-La variable PGSSLROOTCERT debe contener prod-ca-2021.crt.
-El backend resuelve las rutas relativas desde la carpeta backend.
-La conexion utiliza TLS con verificacion del certificado.
+Reemplaza:
 
-## 3. Variables de entorno en Vercel
+- `TU_PASSWORD` por la contraseña real de la base de Supabase
+- `TU_PROJECT_REF` por el identificador del proyecto de Supabase
+
+## 3. Certificado SSL
+
+El certificado debe estar en:
+
+- `backend/prod-ca-2021.crt`
+
+La variable `PGSSLROOTCERT` debe tener exactamente:
+
+```env
+PGSSLROOTCERT=prod-ca-2021.crt
+```
+
+El backend resuelve esta ruta relativa desde la carpeta `backend`.
+
+## 4. Recomendación para una conexión limpia
+
+1. Crear un proyecto nuevo y limpio en Supabase.
+2. Usar una sola `DATABASE_URL` para el backend.
+3. No poner esa URL en el frontend.
+4. No reutilizar conexiones de otros proyectos.
+5. Mantener un único entorno por proyecto: local, preview y producción.
+
+## 5. Variables de entorno en Vercel
 
 Backend:
 
-- DATABASE_URL: URI de conexion de Supabase.
-- JWT_SECRET: clave utilizada para firmar los tokens.
-- PGSSLROOTCERT: prod-ca-2021.crt
+- `DATABASE_URL`
+- `PGSSLROOTCERT`
+- `JWT_SECRET` (si el backend lo usa)
 
 Frontend:
 
-- VITE_API_URL: URL publica del backend terminada en /api.
+- `VITE_API_URL=https://tu-backend.vercel.app/api`
 
-Ejemplo: https://micasa-backend-tau.vercel.app/api
+Nunca pongas `DATABASE_URL` en el frontend.
 
-No colocar la URI de PostgreSQL en el frontend.
+## 6. Verificación rápida
 
-## 4. Conexion desde pgAdmin
+Desde la carpeta `backend`:
 
-1. Seleccionar Servers.
-2. Elegir Register y luego Server.
-3. Asignar un nombre como Mi Casa - Supabase.
-4. Introducir los datos de conexion proporcionados por Supabase.
-5. Configurar SSL.
-6. Guardar la conexion.
+```bash
+npm run db:ping
+```
 
-La conexion de pgAdmin es independiente de la configuracion del backend.
+Si la conexión está bien, el comando responde con `Conexión OK`.
 
-## 5. Estado de la base de datos
+## 7. pgAdmin
 
-La migracion inicial del esquema y la restauracion de los datos ya fueron realizadas.
+La conexión de pgAdmin es opcional y es independiente del backend. Se usa para inspeccionar la base, no para producir la app.
 
-IMPORTANTE: No ejecutar nuevamente estos comandos sobre la base de datos de produccion sin una revision previa:
+## 8. Importante
 
-- npm run migrate
-- npm run restore:data
-- npm run db:align-sequences
+Si vas a migrar a una base nueva:
 
-## 6. Verificacion antes de produccion
+- crea primero el proyecto Supabase nuevo
+- configura `DATABASE_URL` nueva
+- prueba conexión con `npm run db:ping`
+- luego ejecuta migraciones solo sobre la base correcta
 
-1. Comprobar las variables de entorno en Vercel.
-2. Verificar que el certificado SSL este incluido en el backend desplegado.
-3. Comprobar el endpoint principal del backend.
-4. Verificar la conexion con Supabase.
-5. Probar el inicio de sesion.
-6. Comprobar los permisos de Administrador, Caja y Mesero.
-7. Verificar las operaciones principales sin modificar innecesariamente los datos existentes.
+No vuelvas a reutilizar la base antigua ni los secretos viejos.
