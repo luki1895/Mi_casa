@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import useAuth from "../../hooks/useAuth";
 import api from "../../api/axios";
@@ -10,6 +10,8 @@ function Login() {
     const [form, setForm] = useState({ username: "", password: "" });
     const [error, setError] = useState("");
     const [cargando, setCargando] = useState(false);
+    const [showPassword, setShowPassword] = useState(false);
+    const [showRecovery, setShowRecovery] = useState(false);
     const navigate = useNavigate();
     const { login } = useAuth();
 
@@ -22,15 +24,21 @@ function Login() {
         event.preventDefault();
         setError("");
 
+        if (!form.username.trim() || !form.password.trim()) {
+            setError("Debes ingresar tu usuario y contraseña.");
+            return;
+        }
+
         setCargando(true);
         try {
             const { data } = await api.post("/auth/login", {
                 usuario: form.username.trim(),
                 password: form.password,
             });
+
             const usuario = data.usuario;
             const role = normalizeRole(usuario.rol);
-            if (!["admin", "caja", "mesero", "cliente", "empleado"].includes(role)) {
+            if (!["admin", "caja", "mesero", "cocinero", "cliente", "empleado"].includes(role)) {
                 throw new Error("El rol de esta cuenta no está reconocido.");
             }
 
@@ -51,7 +59,7 @@ function Login() {
             if (requestError.message === "El rol de esta cuenta no está reconocido.") {
                 setError(requestError.message);
             } else if (requestError.response) {
-                setError(requestError.response.data?.mensaje || "No se pudo iniciar sesión. Inténtalo nuevamente.");
+                setError(requestError.response.data?.mensaje || "No se pudo iniciar sesión. Verifica tus credenciales e inténtalo nuevamente.");
             } else {
                 setError("No se pudo conectar con el servidor. Verifica la conexión e inténtalo nuevamente.");
             }
@@ -98,14 +106,34 @@ function Login() {
 
                             <div>
                                 <label className="mb-2 block text-sm font-medium text-slate-700">Contraseña</label>
-                                <input
-                                    type="password"
-                                    name="password"
-                                    value={form.password}
-                                    onChange={handleChange}
-                                    placeholder="Ingrese su contraseña"
-                                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-amber-400 focus:bg-white focus:ring-4 focus:ring-amber-100"
-                                />
+                                <div className="relative">
+                                    <input
+                                        type={showPassword ? "text" : "password"}
+                                        name="password"
+                                        value={form.password}
+                                        onChange={handleChange}
+                                        placeholder="Ingrese su contraseña"
+                                        className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 pr-12 text-slate-900 outline-none transition focus:border-amber-400 focus:bg-white focus:ring-4 focus:ring-amber-100"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowPassword((prev) => !prev)}
+                                        className="absolute inset-y-0 right-3 flex items-center text-sm font-medium text-slate-500 hover:text-slate-700"
+                                        aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+                                    >
+                                        {showPassword ? "Ocultar" : "Mostrar"}
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center justify-between gap-3 text-sm">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowRecovery((prev) => !prev)}
+                                    className="font-medium text-amber-700 hover:text-amber-800"
+                                >
+                                    ¿Olvidaste tu contraseña?
+                                </button>
                             </div>
 
                             {error && (
@@ -116,22 +144,35 @@ function Login() {
 
                             <button
                                 type="submit"
-                                className="w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-700"
+                                className="w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-70"
+                                disabled={cargando}
                             >
                                 {cargando ? "Validando acceso..." : "Entrar al sistema"}
                             </button>
                         </form>
 
-                        {demoCredentialsVisible && <div className="mt-8 rounded-2xl bg-amber-50 p-4 text-sm text-slate-700">
-                            <p className="font-semibold text-slate-900">Cuentas demo:</p>
-                            <ul className="mt-2 space-y-1">
-                                <li>Administrador: luis / luis</li>
-                                <li>Mesero: maria / maria</li>
-                                <li>Mesero demo: mesero / mesero</li>
-                                <li>Caja demo: caja / caja</li>
-                                <li>Cliente demo: cliente / cliente</li>
-                            </ul>
-                        </div>}
+                        {showRecovery && (
+                            <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-slate-700">
+                                <p className="font-semibold text-slate-900">Recuperación de contraseña</p>
+                                <p className="mt-2">Contacta al administrador del sistema para restablecer tu acceso.</p>
+                                <a
+                                    href="mailto:luki.189511@gmail.com?subject=Recuperaci%C3%B3n%20de%20contrase%C3%B1a%20Mi%20Casa"
+                                    className="mt-3 inline-block font-semibold text-amber-700 underline underline-offset-2"
+                                >
+                                    Enviar correo de recuperación
+                                </a>
+                            </div>
+                        )}
+
+                        {demoCredentialsVisible && (
+                            <div className="mt-8 rounded-2xl bg-amber-50 p-4 text-sm text-slate-700">
+                                <p className="font-semibold text-slate-900">Credenciales del administrador:</p>
+                                <ul className="mt-2 space-y-1">
+                                    <li>Usuario: luisfernando</li>
+                                    <li>Contraseña: MiCasa2025!</li>
+                                </ul>
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>

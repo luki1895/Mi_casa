@@ -4,6 +4,7 @@ const roleAliases = new Map([
     ["administrator", "admin"],
     ["caja", "caja"],
     ["cajero", "caja"],
+    ["cocinero", "mesero"],
     ["mesero", "mesero"],
     ["mesera", "mesero"],
     ["cliente", "cliente"],

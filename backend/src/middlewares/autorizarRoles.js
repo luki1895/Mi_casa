@@ -11,6 +11,7 @@ const normalizarRol = (rol = "") => {
         administrator: "admin",
         caja: "caja",
         cajero: "caja",
+        cocinero: "mesero",
         mesero: "mesero",
         mesera: "mesero",
         cliente: "cliente",

@@ -143,7 +143,25 @@ const obtener = async (id) => {
 
 };
 
+const aplicarInicialPensionado = (datos) => {
+    if (String(datos.tipo_cliente || "").toUpperCase() !== "PENSIONADO") return datos;
+
+    const saldoSopas = datos.saldo_sopas === "" || datos.saldo_sopas === undefined || datos.saldo_sopas === null
+        ? 26
+        : Number(datos.saldo_sopas);
+    const saldoSegundos = datos.saldo_segundos === "" || datos.saldo_segundos === undefined || datos.saldo_segundos === null
+        ? 26
+        : Number(datos.saldo_segundos);
+
+    return {
+        ...datos,
+        saldo_sopas: Number.isInteger(saldoSopas) ? saldoSopas : 26,
+        saldo_segundos: Number.isInteger(saldoSegundos) ? saldoSegundos : 26,
+    };
+};
+
 const crear = async (datos, db = pool) => {
+    const clienteData = aplicarInicialPensionado({ ...datos });
     const {
         nombre,
         telefono,
@@ -152,7 +170,7 @@ const crear = async (datos, db = pool) => {
         saldo_sopas,
         saldo_segundos,
         estado,
-    } = datos;
+    } = clienteData;
 
     validarSaldo("saldo_sopas", saldo_sopas);
     validarSaldo("saldo_segundos", saldo_segundos);
@@ -163,13 +181,13 @@ const crear = async (datos, db = pool) => {
          VALUES ($1, $2, $3, $4, $5, $6, $7)
          RETURNING id_cliente`,
         [
-            nombre,
-            telefono,
-            tipo_cliente,
-            saldo_pensiones ?? 0,
-            saldo_sopas === "" ? null : saldo_sopas ?? null,
-            saldo_segundos === "" ? null : saldo_segundos ?? null,
-            estado ?? true,
+           nombre,
+           telefono,
+           tipo_cliente,
+           saldo_pensiones ?? 0,
+           saldo_sopas ?? 26,
+           saldo_segundos ?? 26,
+           estado ?? true,
         ]
     );
 
@@ -178,6 +196,28 @@ const crear = async (datos, db = pool) => {
 };
 
 const actualizar = async (id, datos) => {
+    const tieneRenovacion = String(datos.renovar ?? "").toLowerCase() === "true" || datos.renovar === true;
+
+    if (tieneRenovacion && String(datos.tipo_cliente || "").toUpperCase() === "PENSIONADO") {
+        const clienteActual = await pool.query(
+           `SELECT saldo_sopas, saldo_segundos FROM cliente WHERE id_cliente=$1`,
+           [id],
+        );
+
+        const actual = clienteActual.rows[0] || {};
+        const saldoSopasActual = Number(actual.saldo_sopas ?? 0);
+        const saldoSegundosActual = Number(actual.saldo_segundos ?? 0);
+
+        if (saldoSopasActual > 0 || saldoSegundosActual > 0) {
+           datos = {
+               ...datos,
+               saldo_sopas: saldoSopasActual + 26,
+               saldo_segundos: saldoSegundosActual + 26,
+               renovar: false,
+           };
+        }
+    }
+
     const camposPermitidos = [
         "nombre",
         "telefono",
