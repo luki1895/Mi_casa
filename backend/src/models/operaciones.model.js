@@ -35,18 +35,35 @@ const abrirCaja = async (datos, idUsuario) => {
         await client.query("BEGIN");
         await client.query("SELECT pg_advisory_xact_lock(hashtext('cierre-caja:' || CURRENT_DATE::text))");
         const cierre = await client.query("SELECT id_cierre FROM cierre_caja WHERE fecha::date=CURRENT_DATE LIMIT 1");
-        if (cierre.rowCount) throw Object.assign(new Error("La caja de hoy ya fue cerrada y no se puede volver a abrir"), { status: 409 });
+        const aperturaActual = await client.query(
+            "SELECT id_apertura, fecha, id_usuario, monto_inicial, abierta_en FROM apertura_caja WHERE fecha=CURRENT_DATE LIMIT 1 FOR UPDATE"
+        );
+
+        if (aperturaActual.rowCount && !cierre.rowCount) {
+            throw Object.assign(new Error("Ya existe una apertura de caja para hoy"), { status: 409 });
+        }
+
+        if (cierre.rowCount) {
+            await client.query("DELETE FROM cierre_caja WHERE fecha::date=CURRENT_DATE");
+        }
+
         const apertura = await client.query(
             `INSERT INTO apertura_caja (id_usuario,monto_inicial)
-             VALUES ($1,$2) ON CONFLICT (fecha) DO NOTHING
+             VALUES ($1,$2)
+             ON CONFLICT (fecha) DO UPDATE SET
+                id_usuario = EXCLUDED.id_usuario,
+                monto_inicial = EXCLUDED.monto_inicial,
+                abierta_en = NOW()
              RETURNING id_apertura,fecha,id_usuario,monto_inicial,abierta_en`,
             [idUsuario, montoInicial]
         );
-        if (!apertura.rowCount) throw Object.assign(new Error("Ya existe una apertura de caja para hoy"), { status: 409 });
-        await client.query(
-            "INSERT INTO caja (fecha,concepto,ingreso,egreso,saldo,id_usuario) VALUES (NOW(),'Apertura de caja',$1,0,$1,$2)",
-            [montoInicial,idUsuario]
-        );
+
+        if (!cierre.rowCount) {
+            await client.query(
+               "INSERT INTO caja (fecha,concepto,ingreso,egreso,saldo,id_usuario) VALUES (NOW(),'Apertura de caja',$1,0,$1,$2)",
+               [montoInicial,idUsuario]
+            );
+        }
         await client.query(
             "INSERT INTO bitacora_operaciones (id_usuario,accion,entidad,id_entidad,detalle) VALUES ($1,'ABRIR','caja',$2,$3)",
             [idUsuario,apertura.rows[0].id_apertura,JSON.stringify(apertura.rows[0])]

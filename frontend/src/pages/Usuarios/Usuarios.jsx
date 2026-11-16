@@ -3,8 +3,10 @@ import api from "../../api/axios";
 
 const rolOptions = [
   "admin",
-  "cocinero",
   "caja",
+  "mesero",
+  "empleado",
+  "cliente",
 ];
 
 function Usuarios() {
@@ -17,6 +19,10 @@ function Usuarios() {
   const [mostrarFormulario, setMostrarFormulario] = useState(false);
   const [edicion, setEdicion] = useState(null);
   const [formulario, setFormulario] = useState({
+    nombre_completo: "",
+    ci: "",
+    correo: "",
+    telefono: "",
     usuario: "",
     password: "",
     rol: "admin",
@@ -60,6 +66,10 @@ function Usuarios() {
   const resetFormulario = (usuarioSeleccionado = null) => {
     setEdicion(usuarioSeleccionado);
     setFormulario({
+      nombre_completo: usuarioSeleccionado?.nombre_completo || usuarioSeleccionado?.nombre || "",
+      ci: usuarioSeleccionado?.ci || "",
+      correo: usuarioSeleccionado?.correo || "",
+      telefono: usuarioSeleccionado?.telefono || "",
       usuario: usuarioSeleccionado?.usuario || "",
       password: "",
       rol: usuarioSeleccionado?.rol || "admin",
@@ -76,6 +86,10 @@ function Usuarios() {
 
     try {
       const payload = {
+        nombre_completo: formulario.nombre_completo.trim(),
+        ci: formulario.ci.trim(),
+        correo: formulario.correo.trim(),
+        telefono: formulario.telefono.trim(),
         usuario: formulario.usuario.trim(),
         rol: formulario.rol,
         estado: formulario.estado,
@@ -99,7 +113,7 @@ function Usuarios() {
 
       setEdicion(null);
       setMostrarFormulario(false);
-      setFormulario({ usuario: "", password: "", rol: "admin", estado: true });
+      setFormulario({ nombre_completo: "", ci: "", correo: "", telefono: "", usuario: "", password: "", rol: "admin", estado: true });
       await cargarUsuarios();
     } catch (requestError) {
       setError(requestError.response?.data?.mensaje || requestError.message || "No se pudo guardar el usuario.");
@@ -159,7 +173,7 @@ function Usuarios() {
                 onClick={() => {
                   setEdicion(null);
                   setMostrarFormulario(true);
-                  setFormulario({ usuario: "", password: "", rol: "admin", estado: true });
+                  setFormulario({ nombre_completo: "", ci: "", correo: "", telefono: "", usuario: "", password: "", rol: "admin", estado: true });
                 }}
                 className="w-full rounded-xl bg-slate-900 px-4 py-3 font-bold text-white"
               >
@@ -169,6 +183,49 @@ function Usuarios() {
           ) : (
             <form onSubmit={guardarUsuario} className="space-y-4">
               <h2 className="text-xl font-black text-slate-900">{edicion ? "Editar usuario" : "Registrar usuario"}</h2>
+
+              <label className="block text-sm font-semibold text-slate-700">
+                Nombre completo
+                <input
+                  required
+                  value={formulario.nombre_completo}
+                  onChange={(event) => setFormulario({ ...formulario, nombre_completo: event.target.value })}
+                  className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 p-3 outline-none focus:border-amber-400 focus:bg-white"
+                />
+              </label>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="block text-sm font-semibold text-slate-700">
+                  CI
+                  <input
+                    required
+                    value={formulario.ci}
+                    onChange={(event) => setFormulario({ ...formulario, ci: event.target.value })}
+                    className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 p-3 outline-none focus:border-amber-400 focus:bg-white"
+                  />
+                </label>
+
+                <label className="block text-sm font-semibold text-slate-700">
+                  Teléfono
+                  <input
+                    required
+                    value={formulario.telefono}
+                    onChange={(event) => setFormulario({ ...formulario, telefono: event.target.value })}
+                    className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 p-3 outline-none focus:border-amber-400 focus:bg-white"
+                  />
+                </label>
+              </div>
+
+              <label className="block text-sm font-semibold text-slate-700">
+                Correo
+                <input
+                  type="email"
+                  required
+                  value={formulario.correo}
+                  onChange={(event) => setFormulario({ ...formulario, correo: event.target.value })}
+                  className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 p-3 outline-none focus:border-amber-400 focus:bg-white"
+                />
+              </label>
 
               <label className="block text-sm font-semibold text-slate-700">
                 Usuario
@@ -224,7 +281,7 @@ function Usuarios() {
                   onClick={() => {
                     setEdicion(null);
                     setMostrarFormulario(false);
-                    setFormulario({ usuario: "", password: "", rol: "admin", estado: true });
+                    setFormulario({ nombre_completo: "", ci: "", correo: "", telefono: "", usuario: "", password: "", rol: "admin", estado: true });
                   }}
                   className="rounded-xl border border-slate-200 px-4 py-3 font-bold text-slate-700"
                 >

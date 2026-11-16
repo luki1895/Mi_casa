@@ -1,11 +1,68 @@
 import pool from "../config/db.js";
 
+const normalizarTexto = (valor) => {
+    if (valor === undefined || valor === null) return "";
+    return String(valor).trim();
+};
+
 const validarSaldo = (campo, valor) => {
     if (valor === undefined || valor === null || valor === "") return;
     const saldo = Number(valor);
     if (!Number.isInteger(saldo) || saldo < 0) {
         throw Object.assign(new Error(`El campo ${campo} debe ser un entero no negativo`), { status: 400 });
     }
+};
+
+const guardarDatosPersona = async (idCliente, datos = {}) => {
+    const nombreCompleto = normalizarTexto(datos.nombre_completo || datos.nombre || "");
+    const ci = normalizarTexto(datos.ci || "");
+    const correo = normalizarTexto(datos.correo || datos.email || "");
+    const telefono = normalizarTexto(datos.telefono || "");
+
+    if (!nombreCompleto && !ci && !correo && !telefono) return;
+
+    const { rows: clienteActualRows } = await pool.query(
+        "SELECT id_persona FROM cliente WHERE id_cliente = $1",
+        [idCliente]
+    );
+    const idPersona = clienteActualRows[0]?.id_persona;
+
+    if (!idPersona) {
+        const { rows } = await pool.query(
+            `INSERT INTO persona (nombre, ci, email, telefono) VALUES ($1, $2, $3, $4) RETURNING id_persona`,
+            [nombreCompleto || "Sin nombre", ci || null, correo || null, telefono || null]
+        );
+        await pool.query("UPDATE cliente SET id_persona = $1 WHERE id_cliente = $2", [rows[0].id_persona, idCliente]);
+        return;
+    }
+
+    const campos = [];
+    const params = [];
+
+    if (nombreCompleto) {
+        params.push(nombreCompleto);
+        campos.push(`nombre = $${params.length}`);
+    }
+    if (ci) {
+        params.push(ci);
+        campos.push(`ci = $${params.length}`);
+    }
+    if (correo) {
+        params.push(correo);
+        campos.push(`email = $${params.length}`);
+    }
+    if (telefono) {
+        params.push(telefono);
+        campos.push(`telefono = $${params.length}`);
+    }
+
+    if (!campos.length) return;
+
+    params.push(idPersona);
+    await pool.query(
+        `UPDATE persona SET ${campos.join(", ")} WHERE id_persona = $${params.length}`,
+        params
+    );
 };
 
 const listar = async () => {
@@ -80,7 +137,7 @@ const crearReserva = async (idUsuario, datos) => {
     const fecha = String(datos.fecha || "");
     const hora = String(datos.hora || "");
     const personas = Number(datos.cantidad_personas);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha) || !/^\d{2}:\d{2}$/.test(hora) || !Number.isInteger(personas) || personas < 1) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha) || !/^\d{2}:\d{2}$/.test(hora) || !Number.isInteger(persones) || personas < 1) {
         throw Object.assign(new Error("Indica una hora y una cantidad válida de personas para la reserva"), { status: 400 });
     }
     const cliente = await pool.query(
@@ -164,6 +221,7 @@ const crear = async (datos, db = pool) => {
     const clienteData = aplicarInicialPensionado({ ...datos });
     const {
         nombre,
+        nombre_completo,
         telefono,
         tipo_cliente,
         saldo_pensiones,
@@ -175,14 +233,17 @@ const crear = async (datos, db = pool) => {
     validarSaldo("saldo_sopas", saldo_sopas);
     validarSaldo("saldo_segundos", saldo_segundos);
 
+    const nombreCliente = normalizarTexto(nombre_completo || nombre || "");
+    const telefonoCliente = normalizarTexto(telefono || "");
+
     const resultado = await db.query(
         `INSERT INTO cliente
             (nombre, telefono, tipo_cliente, saldo_pensiones, saldo_sopas, saldo_segundos, estado)
          VALUES ($1, $2, $3, $4, $5, $6, $7)
          RETURNING id_cliente`,
         [
-           nombre,
-           telefono,
+           nombreCliente || "Cliente",
+           telefonoCliente || null,
            tipo_cliente,
            saldo_pensiones ?? 0,
            saldo_sopas ?? 26,
@@ -190,6 +251,10 @@ const crear = async (datos, db = pool) => {
            estado ?? true,
         ]
     );
+
+    if (resultado.rows[0]?.id_cliente) {
+        await guardarDatosPersona(resultado.rows[0].id_cliente, clienteData);
+    }
 
     return resultado;
 
@@ -239,6 +304,9 @@ const actualizar = async (id, datos) => {
     }
 
     if (!campos.length) {
+        if (datos.nombre_completo || datos.ci || datos.correo || datos.email || datos.telefono) {
+            await guardarDatosPersona(id, datos);
+        }
         return pool.query("SELECT id_cliente FROM cliente WHERE id_cliente=$1", [id]);
     }
 
@@ -248,6 +316,10 @@ const actualizar = async (id, datos) => {
          RETURNING id_cliente`,
         valores
     );
+
+    if (resultado.rows[0]?.id_cliente) {
+        await guardarDatosPersona(resultado.rows[0].id_cliente, datos);
+    }
 
     return resultado;
 

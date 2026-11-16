@@ -3,20 +3,22 @@ import api from "../../api/axios";
 
 function Clientes() {
   const [busqueda, setBusqueda] = useState("");
-  const [tipo, setTipo] = useState("TODOS");
+  const [tipo, setTipo] = useState("PENSIONADO");
   const [listaClientes, setClientes] = useState([]);
   const [edicion, setEdicion] = useState(null);
   const [clienteVinculacion, setClienteVinculacion] = useState(null);
   const [usuarioCuenta, setUsuarioCuenta] = useState("");
   const [mostrarFormulario, setMostrarFormulario] = useState(false);
-  const [formulario, setFormulario] = useState({ nombre: "", telefono: "", tipo_cliente: "EVENTUAL", saldo_pensiones: 0, saldo_sopas: "", saldo_segundos: "", renovar: false });
+  const [formulario, setFormulario] = useState({ nombre_completo: "", ci: "", correo: "", telefono: "", tipo_cliente: "PENSIONADO", saldo_pensiones: 0, saldo_sopas: "", saldo_segundos: "", renovar: false });
 
   const resetFormulario = (cliente = null) => {
     setEdicion(cliente);
     setFormulario({
-      nombre: cliente?.nombre || "",
+      nombre_completo: cliente?.nombre || "",
+      ci: cliente?.ci || "",
+      correo: cliente?.correo || "",
       telefono: cliente?.telefono || "",
-      tipo_cliente: cliente?.tipo_cliente || "EVENTUAL",
+      tipo_cliente: cliente?.tipo_cliente || "PENSIONADO",
       saldo_pensiones: cliente?.saldo_pensiones || 0,
       saldo_sopas: cliente?.saldo_sopas ?? "",
       saldo_segundos: cliente?.saldo_segundos ?? "",
@@ -73,8 +75,15 @@ function Clientes() {
     event.preventDefault();
     setGuardando(true); setAviso(""); setError("");
     try {
+      const nombre = (formulario.nombre_completo || formulario.nombre || "").trim();
       const body = {
         ...formulario,
+        nombre,
+        nombre_completo: nombre,
+        ci: (formulario.ci || "").trim(),
+        correo: (formulario.correo || "").trim(),
+        telefono: (formulario.telefono || "").trim(),
+        tipo_cliente: "PENSIONADO",
         saldo_pensiones: Number(formulario.saldo_pensiones || 0),
         saldo_sopas: formulario.saldo_sopas === "" ? null : Number(formulario.saldo_sopas),
         saldo_segundos: formulario.saldo_segundos === "" ? null : Number(formulario.saldo_segundos),
@@ -86,7 +95,7 @@ function Clientes() {
       setAviso(edicion ? "Cliente actualizado." : "Cliente registrado.");
       setEdicion(null);
       setMostrarFormulario(false);
-      setFormulario({ nombre: "", telefono: "", tipo_cliente: "EVENTUAL", saldo_pensiones: 0, saldo_sopas: "", saldo_segundos: "", renovar: false });
+      setFormulario({ nombre_completo: "", ci: "", correo: "", telefono: "", tipo_cliente: "PENSIONADO", saldo_pensiones: 0, saldo_sopas: "", saldo_segundos: "", renovar: false });
       await cargar();
     } catch (requestError) {
       setError(requestError.response?.data?.mensaje || "No se pudo guardar el cliente.");
@@ -123,11 +132,11 @@ function Clientes() {
       <div className="rounded-2xl bg-white p-5 shadow-sm">
         <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
           <p className="font-bold">Regla del sistema</p>
-          <p className="mt-1">Solo se admite cliente PENSIONADO o EVENTUAL. El registro manual queda deshabilitado; cada nuevo cliente se crea al registrar un pedido.</p>
+          <p className="mt-1">Solo se admite cliente PENSIONADO en el registro manual; los clientes EVENTUAL se crean automáticamente desde el pedido.</p>
         </div>
       </div>
 
-      <section className="rounded-2xl bg-white p-5 shadow-sm"><div className="flex flex-wrap justify-between gap-3"><h2 className="text-xl font-black">Clientes registrados ({listaClientes.length})</h2><div className="flex gap-2"><input value={busqueda} onChange={(event) => setBusqueda(event.target.value)} placeholder="Buscar nombre o teléfono" className="rounded-lg border px-3 py-2 text-sm" /><select value={tipo} onChange={(event) => setTipo(event.target.value)} className="rounded-lg border px-3 py-2 text-sm"><option value="TODOS">Todos los tipos</option><option value="PENSIONADO">Pensionados</option><option value="EVENTUAL">Eventuales</option></select></div></div><div className="mt-4 overflow-x-auto"><table className="w-full min-w-[560px] text-left text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="p-3">Nombre</th><th className="p-3">Teléfono</th><th className="p-3">Tipo</th><th className="p-3">Estado</th><th className="p-3">Acciones</th></tr></thead><tbody className="divide-y">{cargando ? <tr><td colSpan="5" className="p-8 text-center">Cargando…</td></tr> : clientesFiltrados.map((cliente) => { const activo = cliente.estado !== false && String(cliente.estado).toUpperCase() !== "INACTIVO"; return <tr key={cliente.id_cliente}><td className="p-3 font-semibold">{cliente.nombre}</td><td className="p-3">{cliente.telefono || "—"}</td><td className="p-3">{cliente.tipo_cliente}</td><td className="p-3">{activo ? "Activo" : "Inactivo"}</td><td className="p-3"><div className="flex flex-wrap gap-2"><button onClick={() => editar(cliente)} className="rounded-lg border px-3 py-1.5 text-xs font-bold">Editar</button><button onClick={() => cambiarEstado(cliente)} className="rounded-lg border px-3 py-1.5 text-xs font-bold">{activo ? "Desactivar" : "Activar"}</button><button onClick={() => { setClienteVinculacion(cliente); setUsuarioCuenta(""); setError(""); }} className="rounded-lg border px-3 py-1.5 text-xs font-bold">Vincular cuenta</button></div>{clienteVinculacion?.id_cliente === cliente.id_cliente && <form onSubmit={vincularCuenta} className="mt-3 flex gap-2"><input required value={usuarioCuenta} onChange={(event) => setUsuarioCuenta(event.target.value)} placeholder="Usuario con rol cliente" className="min-w-0 rounded-lg border px-2 py-1.5 text-xs" /><button disabled={guardando} className="rounded-lg bg-amber-500 px-2 py-1.5 text-xs font-bold disabled:opacity-50">Vincular</button><button type="button" onClick={() => setClienteVinculacion(null)} className="rounded-lg border px-2 py-1.5 text-xs">Cancelar</button></form>}</td></tr>; })}{!cargando && clientesFiltrados.length === 0 && <tr><td colSpan="5" className="p-8 text-center text-slate-500">No hay resultados.</td></tr>}</tbody></table></div></section>
+      <section className="rounded-2xl bg-white p-5 shadow-sm"><div className="flex flex-wrap justify-between gap-3"><h2 className="text-xl font-black">Clientes registrados ({listaClientes.length})</h2><div className="flex gap-2"><input value={busqueda} onChange={(event) => setBusqueda(event.target.value)} placeholder="Buscar nombre o teléfono" className="rounded-lg border px-3 py-2 text-sm" /><select value={tipo} onChange={(event) => setTipo(event.target.value)} className="rounded-lg border px-3 py-2 text-sm"><option value="TODOS">Todos los tipos</option><option value="PENSIONADO">Pensionados</option></select></div></div><div className="mt-4 overflow-x-auto"><table className="w-full min-w-[560px] text-left text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="p-3">Nombre</th><th className="p-3">Teléfono</th><th className="p-3">Tipo</th><th className="p-3">Estado</th><th className="p-3">Acciones</th></tr></thead><tbody className="divide-y">{cargando ? <tr><td colSpan="5" className="p-8 text-center">Cargando…</td></tr> : clientesFiltrados.map((cliente) => { const activo = cliente.estado !== false && String(cliente.estado).toUpperCase() !== "INACTIVO"; return <tr key={cliente.id_cliente}><td className="p-3 font-semibold">{cliente.nombre}</td><td className="p-3">{cliente.telefono || "—"}</td><td className="p-3">{cliente.tipo_cliente}</td><td className="p-3">{activo ? "Activo" : "Inactivo"}</td><td className="p-3"><div className="flex flex-wrap gap-2"><button onClick={() => editar(cliente)} className="rounded-lg border px-3 py-1.5 text-xs font-bold">Editar</button><button onClick={() => cambiarEstado(cliente)} className="rounded-lg border px-3 py-1.5 text-xs font-bold">{activo ? "Desactivar" : "Activar"}</button><button onClick={() => { setClienteVinculacion(cliente); setUsuarioCuenta(""); setError(""); }} className="rounded-lg border px-3 py-1.5 text-xs font-bold">Vincular cuenta</button></div>{clienteVinculacion?.id_cliente === cliente.id_cliente && <form onSubmit={vincularCuenta} className="mt-3 flex gap-2"><input required value={usuarioCuenta} onChange={(event) => setUsuarioCuenta(event.target.value)} placeholder="Usuario con rol cliente" className="min-w-0 rounded-lg border px-2 py-1.5 text-xs" /><button disabled={guardando} className="rounded-lg bg-amber-500 px-2 py-1.5 text-xs font-bold disabled:opacity-50">Vincular</button><button type="button" onClick={() => setClienteVinculacion(null)} className="rounded-lg border px-2 py-1.5 text-xs">Cancelar</button></form>}</td></tr>; })}{!cargando && clientesFiltrados.length === 0 && <tr><td colSpan="5" className="p-8 text-center text-slate-500">No hay resultados.</td></tr>}</tbody></table></div></section>
     </div>
   );
 }

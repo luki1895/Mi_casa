@@ -81,6 +81,8 @@ function Caja() {
     }, [cargar]);
 
     const totalPedido = useMemo(() => carrito.reduce((suma, item) => suma + item.precio * item.cantidad, 0), [carrito]);
+    const requiereCajaAbierta = usuario?.role === "caja" && panel.estado_caja !== "ABIERTA";
+    const cajaAbierta = panel.estado_caja === "ABIERTA";
     const totalCobroActual = Number(solicitudCobro?.total || pedidoCobro?.saldo_pendiente || 0);
     const cambio = Math.max(Number(recibido || 0) - totalCobroActual, 0);
     const pedidosFiltrados = pedidos.filter((pedido) => `${pedido.id_pedido} ${pedido.cliente}`.toLowerCase().includes(busqueda.trim().toLowerCase()));
@@ -99,6 +101,9 @@ function Caja() {
         if (!carrito.length) return setAviso("Agrega al menos un producto disponible.");
         if (tipoCliente === "PENSIONADO" && !clienteId) return setAviso("Selecciona un cliente pensionado.");
         if (tipoCliente === "EVENTUAL" && !nombreEventual.trim()) return setAviso("Indica el nombre del cliente eventual.");
+        if (usuario?.role === "caja" && panel.estado_caja !== "ABIERTA") {
+            return setAviso("Abre la caja antes de confirmar un pedido.");
+        }
         setGuardando(true);
         try {
             const respuesta = await api.post("/pedidos", {
@@ -193,11 +198,40 @@ function Caja() {
     };
 
     const imprimir = (pedido) => {
-        const productos = (pedido.detalle || []).map((item) => `<li>${item.cantidad} × ${item.nombre}</li>`).join("");
-        const ventana = window.open("", "_blank", "width=600,height=700");
+        const productos = (pedido.detalle || []).map((item) => `<tr><td>${item.cantidad} × ${item.nombre}</td><td>${importe(item.precio || 0)}</td></tr>`).join("");
+        const ventana = window.open("", "_blank", "width=420,height=760");
         if (!ventana) return setAviso("Permite las ventanas emergentes para imprimir la comanda.");
         const tipoComanda = pedido.esAdicional ? "COMANDA ADICIONAL" : "COMANDA";
-        ventana.document.write(`<html><head><title>${tipoComanda} #${pedido.id_pedido}</title><style>body{font:16px Arial;padding:24px}h1{font-size:22px}li{padding:6px 0}.nota{border-top:1px dashed #333;margin-top:20px;padding-top:12px}</style></head><body><h1>${tipoComanda} · Pedido #${pedido.id_pedido}</h1><p>Cliente: ${pedido.cliente}</p><p>Hora: ${new Date(pedido.fecha).toLocaleString("es")}</p><ul>${productos}</ul><div class="nota"><b>Observaciones:</b> ${pedido.observaciones || "—"}</div><script>window.onload=()=>window.print()</script></body></html>`);
+        ventana.document.write(`<!DOCTYPE html>
+        <html>
+          <head>
+            <title>${tipoComanda} #${pedido.id_pedido}</title>
+            <style>
+              @page { size: 58mm 80mm; margin: 0; }
+              html, body { margin: 0; padding: 0; background: #fff; font-family: Arial, sans-serif; }
+              body { width: 58mm; min-height: 80mm; box-sizing: border-box; padding: 6mm 4mm; color: #111; }
+              h1 { font-size: 12px; font-weight: 700; text-align: center; margin: 0 0 4px; }
+              .meta { font-size: 9px; line-height: 1.5; margin-bottom: 4px; }
+              table { width: 100%; border-collapse: collapse; font-size: 9px; }
+              td { padding: 2px 0; vertical-align: top; }
+              td:last-child { text-align: right; }
+              .divider { border-top: 1px dashed #333; margin: 4px 0; }
+              .total { font-size: 10px; font-weight: 700; text-align: right; }
+              .nota { font-size: 8.5px; line-height: 1.4; margin-top: 4px; }
+            </style>
+          </head>
+          <body>
+            <h1>${tipoComanda}</h1>
+            <div class="meta">Pedido #${pedido.id_pedido}<br />Cliente: ${pedido.cliente}<br />Hora: ${new Date(pedido.fecha).toLocaleString("es")}</div>
+            <table>
+              ${productos}
+            </table>
+            <div class="divider"></div>
+            <div class="total">TOTAL: ${importe(pedido.total || 0)}</div>
+            <div class="nota"><strong>Observaciones:</strong> ${pedido.observaciones || "—"}</div>
+            <script>window.onload = () => window.print();</script>
+          </body>
+        </html>`);
         ventana.document.close();
     };
 
@@ -288,7 +322,7 @@ function Caja() {
                     <p className={`mt-1 text-xl font-black ${panel.estado_caja === "ABIERTA" ? "text-emerald-700" : "text-slate-800"}`}>{panel.estado_caja === "SIN_ABRIR" ? "Cerrada · sin apertura" : panel.estado_caja}</p>
                     {panel.apertura && <p className="mt-1 text-sm text-slate-600">Responsable: {panel.apertura.responsable} · {new Date(panel.apertura.abierta_en).toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" })} · Inicial: {importe(panel.apertura.monto_inicial)}</p>}
                 </div>
-                {panel.estado_caja === "SIN_ABRIR" && <form onSubmit={abrirCaja} className="flex flex-col gap-2 sm:flex-row">
+                {!cajaAbierta && <form onSubmit={abrirCaja} className="flex flex-col gap-2 sm:flex-row">
                     <label className="sr-only" htmlFor="monto-inicial">Monto inicial en efectivo</label>
                     <input id="monto-inicial" required type="number" min="0" step="0.01" value={montoInicial} onChange={(event) => setMontoInicial(event.target.value)} placeholder="Monto inicial Bs" className="rounded-xl border border-slate-200 px-3 py-2.5" />
                     <button disabled={guardando || usuario?.demo} className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50">Abrir caja</button>
@@ -315,7 +349,7 @@ function Caja() {
                             <input required type="number" min="0" step="0.01" value={montoContado} onChange={(event) => setMontoContado(event.target.value)} placeholder="Monto contado en caja" className="w-full rounded-xl border border-slate-200 px-3 py-3" />
                             <p className="text-sm">Diferencia estimada: <b>{importe(Number(montoContado || 0) - Number(panel.saldo_esperado || 0))}</b></p>
                             <textarea value={observacionesCierre} onChange={(event) => setObservacionesCierre(event.target.value)} rows="2" placeholder="Observaciones del cierre (opcional)" className="w-full rounded-xl border border-slate-200 px-3 py-3" />
-                            <button disabled={guardando || Number(panel.pedidos_pendientes) > 0 || adicionales.length > 0} className="rounded-xl bg-slate-900 px-5 py-3 font-bold text-white disabled:opacity-50">Confirmar cierre</button>
+                            <button disabled={guardando || Number(panel.pedidos_pendientes) > 0 || adicionales.length > 0} className="rounded-xl bg-slate-900 px-5 py-3 font-bold text-white disabled:opacity-50">Cerrar caja</button>
                         </form>
                     )}
                 </section>
@@ -334,7 +368,7 @@ function Caja() {
                         {carrito.length > 0 && <ul className="space-y-2">{carrito.map((item) => <li key={item.id_producto} className="flex items-center justify-between rounded-lg border border-slate-100 p-3 text-sm"><span>{item.nombre} × {item.cantidad}</span><span className="flex items-center gap-2"><b>{importe(item.precio * item.cantidad)}</b><button type="button" onClick={() => cambiarCantidad(item.id_producto, -1)} className="px-2 text-lg">−</button><button type="button" onClick={() => cambiarCantidad(item.id_producto, 1)} disabled={item.cantidad >= Number(item.stock)} className="px-2 text-lg disabled:opacity-30">+</button></span></li>)}</ul>}
                         <textarea value={observaciones} onChange={(event) => setObservaciones(event.target.value)} placeholder="Observaciones para cocina" rows="2" className="w-full rounded-xl border border-slate-200 px-3 py-3" />
                         <div className="flex items-center justify-between border-t pt-3"><span className="font-semibold">Total</span><b className="text-xl">{importe(totalPedido)}</b></div>
-                        <button disabled={guardando || cargando || !menu.length || panel.estado_caja !== "ABIERTA"} className="w-full rounded-xl bg-amber-500 px-4 py-3 font-black text-slate-950 disabled:opacity-50">Confirmar pedido</button>
+                        <button disabled={guardando || cargando || !menu.length || requiereCajaAbierta} className="w-full rounded-xl bg-amber-500 px-4 py-3 font-black text-slate-950 disabled:opacity-50">Confirmar pedido</button>
                     </form>
                 </section>
                 <section className="rounded-2xl bg-white p-5 shadow-sm">
