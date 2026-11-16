@@ -13,6 +13,7 @@ import {
 
 import { GiChefToque } from "react-icons/gi";
 import { MdPointOfSale } from "react-icons/md";
+import { FaCalendarAlt } from "react-icons/fa";
 
 const menuItems = [
   {
@@ -34,9 +35,21 @@ const menuItems = [
     roles: ["admin"],
   },
   {
+    title: "Saldos pensionados",
+    icon: FaUserFriends,
+    path: "/pensiones",
+    roles: ["admin", "caja", "mesero"],
+  },
+  {
     title: "Menú",
     icon: MdRestaurantMenu,
     path: "/menu",
+    roles: ["admin"],
+  },
+  {
+    title: "Productos",
+    icon: MdRestaurantMenu,
+    path: "/productos",
     roles: ["admin"],
   },
   {
@@ -49,6 +62,12 @@ const menuItems = [
     title: "Caja",
     icon: MdPointOfSale,
     path: "/caja",
+    roles: ["admin", "caja"],
+  },
+  {
+    title: "Reservas",
+    icon: FaCalendarAlt,
+    path: "/reservas",
     roles: ["admin", "caja"],
   },
   {

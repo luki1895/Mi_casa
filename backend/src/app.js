@@ -12,6 +12,7 @@ import produccionRoutes from "./routes/produccion.routes.js";
 import cajaRoutes from "./routes/caja.routes.js";
 import gastoRoutes from "./routes/gasto.routes.js";
 import reporteRoutes from "./routes/reporte.routes.js";
+import productoRoutes from "./routes/producto.routes.js";
 
 
 
@@ -27,6 +28,7 @@ app.use("/api/usuarios", usuarioRoutes);
 app.use("/api/configuracion", configuracionRoutes);
 app.use("/api/pedidos", pedidoRoutes);
 app.use("/api/produccion", produccionRoutes);
+app.use("/api/productos", productoRoutes);
 app.use("/api/caja", cajaRoutes);
 app.use("/api/gastos", gastoRoutes);
 app.use("/api/reportes", reporteRoutes);

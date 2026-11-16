@@ -20,6 +20,8 @@ const obtener=(idPedido)=>pedidoModel.obtener(idPedido);
 
 const actualizarEstado=(idPedido,estado,idUsuario,rol)=>pedidoModel.actualizarEstado(idPedido,estado,idUsuario,rol);
 
+const registrarImpresion=(idPedido,idUsuario,idSolicitud)=>pedidoModel.registrarImpresion(idPedido,idUsuario,idSolicitud);
+
 const solicitarAdicional=(idPedido,datos,idMesero)=>operacionesModel.crearAdicional(idPedido,datos,idMesero);
 
 const agregarDetalle=(idPedido,datos,idUsuario)=>operacionesModel.agregarDetallePedido(idPedido,datos,idUsuario);
@@ -114,6 +116,8 @@ listarActivos,
 obtener,
 
 actualizarEstado,
+
+registrarImpresion,
 
 solicitarAdicional,
 

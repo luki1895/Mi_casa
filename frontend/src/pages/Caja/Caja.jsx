@@ -8,6 +8,9 @@ const obtenerFecha = () => {
 };
 const importe = (valor) => `Bs ${Number(valor || 0).toFixed(2)}`;
 const estadoBonito = (valor) => String(valor || "PENDIENTE").replaceAll("_", " ");
+const escaparHtml = (valor) => String(valor ?? "").replace(/[&<>"']/g, (caracter) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+}[caracter]));
 
 function Caja() {
     const { usuario } = useAuth();
@@ -19,6 +22,9 @@ function Caja() {
     const [gastos, setGastos] = useState([]);
     const [pagos, setPagos] = useState([]);
     const [adicionales, setAdicionales] = useState([]);
+    const [fechaHistorial, setFechaHistorial] = useState(obtenerFecha);
+    const [historialCaja, setHistorialCaja] = useState(null);
+    const [cargandoHistorial, setCargandoHistorial] = useState(false);
     const [cargando, setCargando] = useState(true);
     const [error, setError] = useState("");
     const [aviso, setAviso] = useState("");
@@ -75,6 +81,25 @@ function Caja() {
             setCargando(false);
         }
     }, [usuario]);
+
+    const cargarHistorial = useCallback(async () => {
+        setCargandoHistorial(true);
+        setError("");
+        if (usuario?.demo) {
+            setHistorialCaja(null);
+            setAviso("El historial no está disponible en modo demostración.");
+            setCargandoHistorial(false);
+            return;
+        }
+        try {
+            const { data } = await api.get("/caja/historial", { params: { fecha: fechaHistorial } });
+            setHistorialCaja(data.data);
+        } catch (requestError) {
+            setError(requestError.response?.data?.mensaje || "No se pudo consultar el historial de Caja.");
+        } finally {
+            setCargandoHistorial(false);
+        }
+    }, [fechaHistorial, usuario]);
 
     useEffect(() => {
         Promise.resolve().then(cargar);
@@ -133,6 +158,7 @@ function Caja() {
                 const adicionalPagado = await api.post(`/caja/adicionales/${solicitudCobro.id_solicitud}/cobrar`, { recibido: Number(recibido), metodo });
                 setUltimaComandaAdicional({
                     id_pedido: adicionalPagado.data.data.id_pedido,
+                    id_solicitud: solicitudCobro.id_solicitud,
                     cliente: solicitudCobro.cliente,
                     fecha: new Date().toISOString(),
                     detalle: adicionalPagado.data.data.detalle,
@@ -197,42 +223,73 @@ function Caja() {
         }
     };
 
-    const imprimir = (pedido) => {
-        const productos = (pedido.detalle || []).map((item) => `<tr><td>${item.cantidad} × ${item.nombre}</td><td>${importe(item.precio || 0)}</td></tr>`).join("");
-        const ventana = window.open("", "_blank", "width=420,height=760");
+    const anularPago = async (pago) => {
+        if (!window.confirm(`¿Anular el pago #${pago.id_pago} por ${importe(pago.monto)}?`)) return;
+        const motivo = window.prompt("Motivo de anulación (obligatorio):");
+        if (motivo === null) return;
+        if (!motivo.trim()) {
+            setAviso("Debes indicar el motivo de la anulación.");
+            return;
+        }
+        setGuardando(true);
+        setAviso("");
+        try {
+            await api.post(`/caja/pagos/${pago.id_pago}/anular`, { motivo: motivo.trim() });
+            setAviso(`Pago #${pago.id_pago} anulado; se recalculó el saldo del pedido.`);
+            await cargar();
+        } catch (requestError) {
+            setAviso(requestError.response?.data?.mensaje || "No se pudo anular el pago.");
+        } finally {
+            setGuardando(false);
+        }
+    };
+
+    const imprimir = async (pedido) => {
+        const ventana = window.open("", "_blank", "width=600,height=700");
         if (!ventana) return setAviso("Permite las ventanas emergentes para imprimir la comanda.");
-        const tipoComanda = pedido.esAdicional ? "COMANDA ADICIONAL" : "COMANDA";
-        ventana.document.write(`<!DOCTYPE html>
-        <html>
-          <head>
-            <title>${tipoComanda} #${pedido.id_pedido}</title>
-            <style>
-              @page { size: 58mm 80mm; margin: 0; }
-              html, body { margin: 0; padding: 0; background: #fff; font-family: Arial, sans-serif; }
-              body { width: 58mm; min-height: 80mm; box-sizing: border-box; padding: 6mm 4mm; color: #111; }
-              h1 { font-size: 12px; font-weight: 700; text-align: center; margin: 0 0 4px; }
-              .meta { font-size: 9px; line-height: 1.5; margin-bottom: 4px; }
-              table { width: 100%; border-collapse: collapse; font-size: 9px; }
-              td { padding: 2px 0; vertical-align: top; }
-              td:last-child { text-align: right; }
-              .divider { border-top: 1px dashed #333; margin: 4px 0; }
-              .total { font-size: 10px; font-weight: 700; text-align: right; }
-              .nota { font-size: 8.5px; line-height: 1.4; margin-top: 4px; }
-            </style>
-          </head>
-          <body>
-            <h1>${tipoComanda}</h1>
-            <div class="meta">Pedido #${pedido.id_pedido}<br />Cliente: ${pedido.cliente}<br />Hora: ${new Date(pedido.fecha).toLocaleString("es")}</div>
-            <table>
-              ${productos}
-            </table>
-            <div class="divider"></div>
-            <div class="total">TOTAL: ${importe(pedido.total || 0)}</div>
-            <div class="nota"><strong>Observaciones:</strong> ${pedido.observaciones || "—"}</div>
-            <script>window.onload = () => window.print();</script>
-          </body>
-        </html>`);
-        ventana.document.close();
+        try {
+            const respuesta = await api.post(`/pedidos/${pedido.id_pedido}/comandas`, {
+                id_solicitud: pedido.esAdicional ? pedido.id_solicitud : undefined,
+            });
+            const comanda = respuesta.data.data;
+            const tipoComanda = comanda.tipo === "ADICIONAL" ? "COMANDA ADICIONAL" : "COMANDA";
+            const productos = (comanda.detalle || []).map((item) => `<tr><td>${escaparHtml(item.cantidad)} × ${escaparHtml(item.nombre)}</td><td>${importe(item.precio || 0)}</td></tr>`).join("");
+            const reimpresion = comanda.es_reimpresion ? "<p><strong>REIMPRESIÓN</strong></p>" : "";
+            ventana.document.write(`<!DOCTYPE html>
+                <html>
+                  <head>
+                    <title>${tipoComanda} #${escaparHtml(comanda.id_pedido)}</title>
+                    <style>
+                      @page { size: 58mm 80mm; margin: 0; }
+                      html, body { margin: 0; padding: 0; background: #fff; font-family: Arial, sans-serif; }
+                      body { width: 58mm; min-height: 80mm; box-sizing: border-box; padding: 6mm 4mm; color: #111; }
+                      h1 { font-size: 12px; font-weight: 700; text-align: center; margin: 0 0 4px; }
+                      .meta { font-size: 9px; line-height: 1.5; margin-bottom: 4px; }
+                      table { width: 100%; border-collapse: collapse; font-size: 9px; }
+                      td { padding: 2px 0; vertical-align: top; }
+                      td:last-child { text-align: right; white-space: nowrap; }
+                      .divider { border-top: 1px dashed #333; margin: 4px 0; }
+                      .total { font-size: 10px; font-weight: 700; text-align: right; }
+                      .nota { font-size: 8.5px; line-height: 1.4; margin-top: 4px; }
+                    </style>
+                  </head>
+                  <body>
+                    <h1>${tipoComanda}</h1>
+                    ${reimpresion}
+                    <div class="meta">Pedido #${escaparHtml(comanda.id_pedido)}<br />Cliente: ${escaparHtml(comanda.cliente)}<br />Hora: ${escaparHtml(new Date(comanda.fecha).toLocaleString("es"))}</div>
+                    <table>${productos}</table>
+                    <div class="divider"></div>
+                    <div class="total">TOTAL: ${importe(comanda.total || pedido.total || 0)}</div>
+                    <div class="nota"><strong>Observaciones:</strong> ${escaparHtml(comanda.observaciones || "—")}</div>
+                    <script>window.onload = () => window.print();</script>
+                  </body>
+                </html>`);
+            ventana.document.close();
+            if (comanda.es_reimpresion) setAviso("Reimpresión registrada en la bitácora.");
+        } catch (requestError) {
+            ventana.close();
+            setAviso(requestError.response?.data?.mensaje || "No se pudo registrar la impresión de la comanda.");
+        }
     };
 
     return (
@@ -246,11 +303,15 @@ function Caja() {
                     ["TURNO", "Turno de caja"],
                     ["COBROS", "Cobros"],
                     ["MOVIMIENTOS", "Movimientos"],
+                    ["HISTORIAL", "Historial"],
                 ].map(([seccion, titulo]) => (
                     <button
                         key={seccion}
                         type="button"
-                        onClick={() => setSeccionActiva(seccion)}
+                        onClick={() => {
+                            setSeccionActiva(seccion);
+                            if (seccion === "HISTORIAL") cargarHistorial();
+                        }}
                         aria-current={seccionActiva === seccion ? "page" : undefined}
                         className={`rounded-xl px-5 py-3 text-sm font-bold transition ${seccionActiva === seccion ? "bg-slate-900 text-white shadow-sm" : "text-slate-600 hover:bg-slate-100"}`}
                     >
@@ -373,7 +434,7 @@ function Caja() {
                 </section>
                 <section className="rounded-2xl bg-white p-5 shadow-sm">
                     <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-xl font-black">Pedidos y seguimiento</h2><p className="text-sm text-slate-500">Estados, cobros y comandas</p></div><input value={busqueda} onChange={(event) => setBusqueda(event.target.value)} placeholder="Buscar cliente o # pedido" className="rounded-xl border border-slate-200 px-3 py-2 text-sm" /></div>
-                    <div className="mt-4 space-y-3">{pedidosFiltrados.map((pedido) => <article key={pedido.id_pedido} className="rounded-xl border border-slate-100 p-4"><div className="flex flex-wrap items-start justify-between gap-2"><div><p className="font-black">#{pedido.id_pedido} · {pedido.cliente}</p><p className="mt-1 text-xs text-slate-500">{new Date(pedido.fecha).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })} · {estadoBonito(pedido.estado)}</p></div><b>{importe(pedido.total)}</b></div><ul className="mt-3 text-sm text-slate-600">{pedido.detalle.map((item, index) => <li key={`${item.id_producto}-${index}`}>{item.cantidad} × {item.nombre}</li>)}</ul>{pedido.observaciones && <p className="mt-2 text-xs text-slate-500">Nota cocina: {pedido.observaciones}</p>}                    <div className="mt-3 flex flex-wrap gap-2">{Number(pedido.saldo_pendiente) > 0 && <button onClick={() => { setPedidoCobro(pedido); setSolicitudCobro(null); setRecibido(String(pedido.saldo_pendiente)); }} className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-bold">Cobrar saldo</button>}{pedido.pagado && <button onClick={() => imprimir(pedido)} className="rounded-lg bg-slate-900 px-3 py-2 text-xs font-bold text-white">Imprimir comanda</button>}{pedido.estado === "PENDIENTE" && <button onClick={() => actualizarEstadoPedido(pedido, "EN_PREPARACION")} className="rounded-lg bg-amber-100 px-3 py-2 text-xs font-bold text-amber-900">Enviar a preparación</button>}{pedido.estado === "EN_PREPARACION" && <button onClick={() => actualizarEstadoPedido(pedido, "LISTO")} className="rounded-lg bg-blue-100 px-3 py-2 text-xs font-bold text-blue-900">Marcar listo</button>}{pedido.estado === "LISTO" && <button onClick={() => actualizarEstadoPedido(pedido, "ENTREGADO")} className="rounded-lg bg-emerald-100 px-3 py-2 text-xs font-bold text-emerald-900">Marcar entregado</button>}</div></article>)}{!pedidosFiltrados.length && <p className="py-8 text-center text-sm text-slate-500">No hay pedidos que coincidan.</p>}</div>
+                    <div className="mt-4 space-y-3">{pedidosFiltrados.map((pedido) => <article key={pedido.id_pedido} className="rounded-xl border border-slate-100 p-4"><div className="flex flex-wrap items-start justify-between gap-2"><div><p className="font-black">#{pedido.id_pedido} · {pedido.cliente}</p><p className="mt-1 text-xs text-slate-500">{new Date(pedido.fecha).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })} · {estadoBonito(pedido.estado)}</p></div><b>{importe(pedido.total)}</b></div><ul className="mt-3 text-sm text-slate-600">{pedido.detalle.map((item, index) => <li key={`${item.id_producto}-${index}`}>{item.cantidad} × {item.nombre}</li>)}</ul>{pedido.observaciones && <p className="mt-2 text-xs text-slate-500">Nota cocina: {pedido.observaciones}</p>}                                        <div className="mt-3 flex flex-wrap gap-2">{Number(pedido.saldo_pendiente) > 0 && <button onClick={() => { setPedidoCobro(pedido); setSolicitudCobro(null); setRecibido(String(pedido.saldo_pendiente)); }} className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-bold">Cobrar saldo</button>}{pedido.pagado && <button onClick={() => imprimir(pedido)} className="rounded-lg bg-slate-900 px-3 py-2 text-xs font-bold text-white">Imprimir comanda</button>}{pedido.estado === "PENDIENTE" && <>{pedido.pagado && <button onClick={() => actualizarEstadoPedido(pedido, "EN_PREPARACION")} className="rounded-lg bg-amber-100 px-3 py-2 text-xs font-bold text-amber-900">Enviar a preparación</button>}{!pedido.pagado && <button onClick={() => actualizarEstadoPedido(pedido, "CANCELADO")} className="rounded-lg border border-rose-200 px-3 py-2 text-xs font-bold text-rose-700">Cancelar pedido</button>}</>}{pedido.estado === "EN_PREPARACION" && <button onClick={() => actualizarEstadoPedido(pedido, "LISTO")} className="rounded-lg bg-blue-100 px-3 py-2 text-xs font-bold text-blue-900">Marcar listo</button>}{pedido.estado === "LISTO" && <button onClick={() => actualizarEstadoPedido(pedido, "ENTREGADO")} className="rounded-lg bg-emerald-100 px-3 py-2 text-xs font-bold text-emerald-900">Marcar entregado</button>}</div></article>)}{!pedidosFiltrados.length && <p className="py-8 text-center text-sm text-slate-500">No hay pedidos que coincidan.</p>}</div>
                 </section>
             </div>
             <section className="rounded-2xl bg-white p-5 shadow-sm">
@@ -405,7 +466,7 @@ function Caja() {
                     <article className="rounded-2xl bg-white p-5 shadow-sm">
                         <h2 className="text-xl font-black">Ingresos registrados</h2>
                         <div className="mt-3 max-h-96 overflow-auto">
-                            {pagos.map((pago) => <p key={pago.id_pago} className="flex justify-between gap-3 border-t py-2 text-sm"><span>Pedido #{pago.id_pedido} · {pago.metodo} · {new Date(pago.fecha).toLocaleString("es")}</span><b>{importe(pago.monto)}</b></p>)}
+                            {pagos.map((pago) => <div key={pago.id_pago} className="flex flex-wrap items-center justify-between gap-3 border-t py-2 text-sm"><span>Pago #{pago.id_pago} · Pedido #{pago.id_pedido} · {pago.metodo} · {new Date(pago.fecha).toLocaleString("es")} · {pago.estado}{pago.motivo_anulacion && <small className="block text-slate-500">Motivo: {pago.motivo_anulacion}</small>}</span><span className="flex items-center gap-3"><b>{importe(pago.monto)}</b>{panel.estado_caja === "ABIERTA" && pago.estado === "CONFIRMADO" && pago.estado_pedido !== "ENTREGADO" && <button type="button" disabled={guardando} onClick={() => anularPago(pago)} className="rounded-md border border-rose-200 px-2 py-1 text-xs font-semibold text-rose-700 disabled:opacity-50">Anular</button>}</span></div>)}
                             {!pagos.length && <p className="py-4 text-sm text-slate-500">No hay pagos registrados.</p>}
                         </div>
                     </article>
@@ -417,6 +478,25 @@ function Caja() {
                         </div>
                     </article>
                     </div>
+                </section>
+            )}
+            {seccionActiva === "HISTORIAL" && (
+                <section className="space-y-5">
+                    <article className="flex flex-wrap items-end justify-between gap-3 rounded-2xl bg-white p-5 shadow-sm">
+                        <div><h2 className="text-xl font-black">Historial diario de Caja</h2><p className="text-sm text-slate-500">Pagos y gastos no efectivos se muestran separados del saldo de efectivo.</p></div>
+                        <div className="flex gap-2"><label className="text-sm font-semibold">Fecha<input type="date" value={fechaHistorial} onChange={(event) => setFechaHistorial(event.target.value)} className="mt-1 block rounded-lg border p-2" /></label><button type="button" onClick={cargarHistorial} className="rounded-lg border px-4 py-2 font-semibold">Consultar</button></div>
+                    </article>
+                    {cargandoHistorial ? <p className="rounded-xl bg-white p-5">Cargando historial…</p> : historialCaja && <>
+                        <div className="grid gap-4 md:grid-cols-3">
+                            <article className="rounded-xl bg-white p-5 shadow-sm"><p className="text-sm text-slate-500">Efectivo esperado</p><p className="mt-2 text-2xl font-black">{importe(historialCaja.efectivo_esperado)}</p></article>
+                            <article className="rounded-xl bg-white p-5 shadow-sm"><p className="text-sm text-slate-500">Apertura</p><p className="mt-2 font-bold">{historialCaja.apertura ? importe(historialCaja.apertura.monto_inicial) : "Sin apertura"}</p><p className="text-xs text-slate-500">{historialCaja.apertura?.responsable || ""}</p></article>
+                            <article className="rounded-xl bg-white p-5 shadow-sm"><p className="text-sm text-slate-500">Cierre</p><p className="mt-2 font-bold">{historialCaja.cierre ? `Contado ${importe(historialCaja.cierre.monto_contado)} · Dif. ${importe(historialCaja.cierre.diferencia)}` : "Sin cierre"}</p><p className="text-xs text-slate-500">{historialCaja.cierre?.responsable || ""}</p></article>
+                        </div>
+                        <div className="grid gap-5 xl:grid-cols-2">
+                            <article className="rounded-2xl bg-white p-5 shadow-sm"><h3 className="font-black">Movimientos de efectivo</h3><div className="mt-3 max-h-96 overflow-auto">{historialCaja.movimientos.map((movimiento) => <p key={movimiento.id_caja} className="flex justify-between gap-3 border-t py-2 text-sm"><span>{movimiento.concepto} · {new Date(movimiento.fecha).toLocaleTimeString("es")}</span><b>{movimiento.egreso > 0 ? `−${importe(movimiento.egreso)}` : `+${importe(movimiento.ingreso)}`}</b></p>)}{!historialCaja.movimientos.length && <p className="py-3 text-sm text-slate-500">Sin movimientos de efectivo.</p>}</div></article>
+                            <article className="rounded-2xl bg-white p-5 shadow-sm"><h3 className="font-black">Pagos y gastos por método</h3><h4 className="mt-3 text-sm font-bold">Pagos</h4>{historialCaja.pagos_por_metodo.map((item) => <p key={`pago-${item.metodo}`} className="flex justify-between border-t py-2 text-sm"><span>{item.metodo} ({item.cantidad})</span><b>{importe(item.total)}</b></p>)}<h4 className="mt-3 text-sm font-bold">Gastos</h4>{historialCaja.gastos_por_metodo.map((item) => <p key={`gasto-${item.metodo_pago}`} className="flex justify-between border-t py-2 text-sm"><span>{item.metodo_pago} ({item.cantidad})</span><b>{importe(item.total)}</b></p>)}</article>
+                        </div>
+                    </>}
                 </section>
             )}
             {(pedidoCobro || solicitudCobro) && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4"><form onSubmit={confirmarPago} className="w-full max-w-md space-y-4 rounded-2xl bg-white p-6 shadow-xl"><div><p className="text-xs uppercase tracking-widest text-amber-700">{solicitudCobro ? "Cobro adicional" : "Cobro de pedido"}</p><h2 className="mt-1 text-2xl font-black">#{pedidoCobro?.id_pedido || solicitudCobro?.id_pedido} · {pedidoCobro?.cliente || solicitudCobro?.cliente}</h2></div><p>Importe pendiente: <b>{importe(totalCobroActual)}</b></p><label className="block text-sm font-semibold">Método<select value={metodo} onChange={(event) => setMetodo(event.target.value)} className="mt-1 w-full rounded-lg border p-3">{['EFECTIVO','TARJETA','TRANSFERENCIA','QR'].map((opcion) => <option key={opcion}>{opcion}</option>)}</select></label><label className="block text-sm font-semibold">Importe recibido<input autoFocus required type="number" min={totalCobroActual} step="0.01" value={recibido} onChange={(event) => setRecibido(event.target.value)} className="mt-1 w-full rounded-lg border p-3" /></label><p className="text-sm">Cambio: <b>{metodo === 'EFECTIVO' ? importe(cambio) : importe(0)}</b></p><div className="flex gap-3"><button type="button" onClick={() => { setPedidoCobro(null); setSolicitudCobro(null); }} className="w-full rounded-xl border px-4 py-3 font-bold">Cancelar</button><button disabled={guardando} className="w-full rounded-xl bg-emerald-700 px-4 py-3 font-bold text-white">Confirmar pago</button></div></form></div>}

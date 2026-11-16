@@ -95,6 +95,77 @@ const obtener = async (idPedido) => {
 	return rows[0];
 };
 
+const registrarImpresion = async (idPedido, idUsuario, idSolicitud = null) => {
+	const client = await pool.connect();
+	try {
+		await client.query("BEGIN");
+		const pedidoResult = await client.query(
+			`SELECT p.id_pedido,p.pagado,p.estado,c.nombre AS cliente,p.fecha,p.observaciones
+			 FROM pedido p INNER JOIN cliente c ON c.id_cliente=p.id_cliente
+			 WHERE p.id_pedido=$1 FOR UPDATE OF p`,
+			[idPedido],
+		);
+		if (!pedidoResult.rowCount) throw Object.assign(new Error("Pedido no encontrado"), { status: 404 });
+		const pedido = pedidoResult.rows[0];
+		if (!pedido.pagado) throw Object.assign(new Error("Solo se pueden imprimir comandas de pedidos cobrados"), { status: 409 });
+
+		let detalle;
+		let observaciones = pedido.observaciones;
+		let tipo = "PEDIDO";
+		if (idSolicitud !== null && idSolicitud !== undefined) {
+			const solicitud = await client.query(
+				`SELECT id_solicitud,estado,observaciones
+				 FROM solicitud_adicional
+				 WHERE id_solicitud=$1 AND id_pedido=$2 FOR UPDATE`,
+				[idSolicitud,idPedido],
+			);
+			if (!solicitud.rowCount || solicitud.rows[0].estado !== "COBRADO") {
+				throw Object.assign(new Error("No existe un adicional cobrado para imprimir"), { status: 404 });
+			}
+			const lineas = await client.query(
+				`SELECT p.id_producto,pr.nombre,p.cantidad,p.precio,p.subtotal
+				 FROM detalle_pedido p INNER JOIN producto pr ON pr.id_producto=p.id_producto
+				 WHERE p.id_pedido=$1 AND p.id_solicitud=$2 ORDER BY p.id_detalle_pedido`,
+				[idPedido,idSolicitud],
+			);
+			detalle = lineas.rows;
+			observaciones = solicitud.rows[0].observaciones;
+			tipo = "ADICIONAL";
+		} else {
+			const lineas = await client.query(
+				`SELECT p.id_producto,pr.nombre,p.cantidad,p.precio,p.subtotal
+				 FROM detalle_pedido p INNER JOIN producto pr ON pr.id_producto=p.id_producto
+				 WHERE p.id_pedido=$1 AND p.id_solicitud IS NULL ORDER BY p.id_detalle_pedido`,
+				[idPedido],
+			);
+			detalle = lineas.rows;
+		}
+		if (!detalle.length) throw Object.assign(new Error("La comanda no contiene productos"), { status: 409 });
+
+		const impresionesAnteriores = await client.query(
+			`SELECT COUNT(*)::int AS cantidad
+			 FROM bitacora_operaciones
+			 WHERE entidad='comanda' AND id_entidad=$1 AND detalle->>'tipo'=$2
+			   AND COALESCE(detalle->>'id_solicitud','')=$3`,
+			[String(idPedido),tipo,idSolicitud == null ? "" : String(idSolicitud)],
+		);
+		const esReimpresion = impresionesAnteriores.rows[0].cantidad > 0;
+		await client.query(
+			`INSERT INTO bitacora_operaciones
+			 (id_usuario,accion,entidad,id_entidad,detalle)
+			 VALUES ($1,$2,'comanda',$3,$4)`,
+			[idUsuario,esReimpresion ? "REIMPRIMIR" : "IMPRIMIR",String(idPedido),JSON.stringify({ tipo,id_solicitud:idSolicitud == null ? "" : String(idSolicitud) })],
+		);
+		await client.query("COMMIT");
+		return { ...pedido, detalle, observaciones, tipo, id_solicitud:idSolicitud, es_reimpresion:esReimpresion };
+	} catch (error) {
+		await client.query("ROLLBACK");
+		throw error;
+	} finally {
+		client.release();
+	}
+};
+
 const actualizarEstado = async (idPedido, estado, idUsuario, rol) => {
 	const nuevoEstado = String(estado || "").toUpperCase();
 	if (!["PENDIENTE", "EN_PREPARACION", "LISTO", "ENTREGADO", "CANCELADO"].includes(nuevoEstado)) {
@@ -117,6 +188,9 @@ const actualizarEstado = async (idPedido, estado, idUsuario, rol) => {
 			CANCELADO: [],
 		};
 		if (!transiciones[estadoActual]?.includes(nuevoEstado)) throw Object.assign(new Error(`No se permite pasar de ${estadoActual} a ${nuevoEstado}`), { status: 409 });
+		if (nuevoEstado === "EN_PREPARACION" && !actual.rows[0].pagado) {
+			throw Object.assign(new Error("El pedido debe estar completamente pagado antes de enviarlo a preparación"), { status: 409 });
+		}
 		if (nuevoEstado === "CANCELADO" && actual.rows[0].pagado) throw Object.assign(new Error("Un pedido pagado no se cancela ni se elimina sin un proceso de devolución"), { status: 409 });
 		await client.query("UPDATE pedido SET estado=$1 WHERE id_pedido=$2", [nuevoEstado,idPedido]);
 		await client.query(
@@ -203,6 +277,8 @@ listarActivos,
 obtener,
 
 actualizarEstado,
+
+registrarImpresion,
 
 crear
 

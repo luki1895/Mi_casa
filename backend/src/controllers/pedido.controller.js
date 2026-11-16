@@ -85,3 +85,11 @@ export const actualizarEstado = async (req, res) => {
 		response.error(res, error.message, error.status || 400);
 	}
 };
+
+export const imprimirComanda = async (req, res) => {
+	try {
+		response.ok(res, await pedidoService.registrarImpresion(req.params.id, req.usuario.id, req.body.id_solicitud));
+	} catch (error) {
+		response.error(res, error.message, error.status || 500);
+	}
+};

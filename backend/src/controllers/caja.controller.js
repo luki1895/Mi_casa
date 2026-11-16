@@ -28,6 +28,11 @@ try { response.ok(res,await cajaService.reportes()); }
 catch(error) { response.error(res,error.message); }
 };
 
+export const historial=async(req,res)=>{
+try { response.ok(res,await cajaService.historial(req.query.fecha)); }
+catch(error) { response.error(res,error.message,error.status||500); }
+};
+
 export const pedidos=async(req,res)=>{
 try { response.ok(res,await cajaService.pedidos()); }
 catch(error) { response.error(res,error.message); }
@@ -46,6 +51,11 @@ catch(error) { response.error(res,error.message); }
 export const cobrar=async(req,res)=>{
 try { response.ok(res,await cajaService.cobrar(req.params.id,req.body,req.usuario.id)); }
 catch(error) { response.error(res,error.message,error.status||400); }
+};
+
+export const anularPago=async(req,res)=>{
+try { response.ok(res,await cajaService.anularPago(req.params.id,req.body,req.usuario.id),"Pago anulado"); }
+catch(error) { response.error(res,error.message,error.status||500); }
 };
 
 export const cerrar=async(req,res)=>{

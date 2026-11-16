@@ -19,6 +19,8 @@ router.post("/:id/detalle",verificarToken,autorizarRoles("admin", "caja", "meser
 
 router.post("/:id/adicionales",verificarToken,autorizarRoles("mesero"),pedido.solicitarAdicional);
 
+router.post("/:id/comandas",verificarToken,autorizarRoles("admin","caja","mesero"),pedido.imprimirComanda);
+
 router.patch("/:id/estado",verificarToken,autorizarRoles("admin", "caja", "mesero"),pedido.actualizarEstado);
 
 router.post("/",verificarToken,autorizarRoles("admin", "caja", "mesero"),pedido.crear);

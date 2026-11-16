@@ -104,11 +104,14 @@ const listarPedidosCaja = async () => {
 const listarPagos = async () => {
     const { rows } = await pool.query(
         `SELECT pg.id_pago, pg.id_pedido, c.nombre AS cliente, pg.fecha,
-                pg.monto, pg.metodo, pg.recibido, pg.cambio, pg.estado, u.usuario
+                pg.monto, pg.metodo, pg.recibido, pg.cambio, pg.estado,
+                pg.motivo_anulacion,pg.anulado_en,pg.anulado_por,p.estado AS estado_pedido,
+                sa.id_solicitud,u.usuario
          FROM pago pg
          INNER JOIN pedido p ON p.id_pedido=pg.id_pedido
          INNER JOIN cliente c ON c.id_cliente=p.id_cliente
          INNER JOIN usuario u ON u.id_usuario=pg.id_usuario
+         LEFT JOIN solicitud_adicional sa ON sa.id_pago=pg.id_pago
          ORDER BY pg.fecha DESC LIMIT 200`
     );
     return rows;
@@ -118,8 +121,13 @@ const registrarGasto = async (datos, idUsuario) => {
     const concepto = String(datos.concepto || "").trim();
     const descripcion = String(datos.descripcion || "").trim();
     const total = Number(datos.total);
+    const cantidad = Number(datos.cantidad ?? 1);
+    const precioUnitario = Number(datos.precio_unitario ?? datos.total);
     const metodoPago = String(datos.metodo_pago || "EFECTIVO").toUpperCase();
-    if (!concepto || !(total > 0) || !Number.isFinite(total)) {
+    if (!concepto || !(total > 0) || !Number.isFinite(total)
+        || !Number.isInteger(cantidad) || cantidad < 1
+        || !Number.isFinite(precioUnitario) || precioUnitario <= 0
+        || Math.abs(cantidad * precioUnitario - total) >= 0.01) {
         throw Object.assign(new Error("Indica un concepto y un importe mayor que cero"), { status: 400 });
     }
     if (!["EFECTIVO", "TARJETA", "TRANSFERENCIA", "QR"].includes(metodoPago)) {
@@ -132,7 +140,7 @@ const registrarGasto = async (datos, idUsuario) => {
         const gasto = await client.query(
             `INSERT INTO gasto (fecha,concepto,descripcion,cantidad,precio_unitario,total,id_usuario,metodo_pago)
              VALUES (COALESCE($1::timestamptz,NOW()),$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-            [datos.fecha || null, concepto, descripcion || null, Number(datos.cantidad || 1), Number(datos.precio_unitario || total), total, idUsuario, metodoPago]
+            [datos.fecha || null, concepto, descripcion || null, cantidad, precioUnitario, total, idUsuario, metodoPago]
         );
         if (metodoPago === "EFECTIVO") {
             const saldoResult = await client.query("SELECT COALESCE(SUM(ingreso-egreso),0) AS saldo FROM caja WHERE fecha::date=CURRENT_DATE");
@@ -212,6 +220,57 @@ const reporteCaja = async () => {
     };
 };
 
+const historialCaja = async (fecha = new Date().toISOString().slice(0, 10)) => {
+    const textoFecha = String(fecha);
+    const parsedFecha = new Date(`${textoFecha}T00:00:00Z`);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(textoFecha)
+        || Number.isNaN(parsedFecha.getTime())
+        || parsedFecha.toISOString().slice(0, 10) !== textoFecha) {
+        throw Object.assign(new Error("La fecha consultada no es válida"), { status: 400 });
+    }
+    const [apertura, cierre, movimientos, pagos, gastos] = await Promise.all([
+        pool.query(
+            `SELECT a.id_apertura,a.fecha,a.id_usuario,a.monto_inicial,a.abierta_en,u.usuario AS responsable
+             FROM apertura_caja a INNER JOIN usuario u ON u.id_usuario=a.id_usuario
+             WHERE a.fecha=$1::date`,
+            [textoFecha],
+        ),
+        pool.query(
+            `SELECT c.id_cierre,c.fecha,c.id_usuario,c.saldo_esperado,c.monto_contado,
+                    c.diferencia,c.observaciones,u.usuario AS responsable
+             FROM cierre_caja c INNER JOIN usuario u ON u.id_usuario=c.id_usuario
+             WHERE c.fecha::date=$1::date ORDER BY c.fecha DESC LIMIT 1`,
+            [textoFecha],
+        ),
+        pool.query(
+            `SELECT id_caja,fecha,concepto,ingreso,egreso,saldo,id_usuario
+             FROM caja WHERE fecha::date=$1::date ORDER BY fecha,id_caja`,
+            [textoFecha],
+        ),
+        pool.query(
+            `SELECT metodo,COALESCE(SUM(monto),0) AS total,COUNT(*)::int AS cantidad
+             FROM pago WHERE fecha::date=$1::date AND estado='CONFIRMADO'
+             GROUP BY metodo ORDER BY metodo`,
+            [textoFecha],
+        ),
+        pool.query(
+            `SELECT metodo_pago,COALESCE(SUM(total),0) AS total,COUNT(*)::int AS cantidad
+             FROM gasto WHERE fecha::date=$1::date
+             GROUP BY metodo_pago ORDER BY metodo_pago`,
+            [textoFecha],
+        ),
+    ]);
+    return {
+        fecha: textoFecha,
+        apertura: apertura.rows[0] || null,
+        cierre: cierre.rows[0] || null,
+        movimientos: movimientos.rows,
+        pagos_por_metodo: pagos.rows,
+        gastos_por_metodo: gastos.rows,
+        efectivo_esperado: movimientos.rows.reduce((total, movimiento) => total + Number(movimiento.ingreso) - Number(movimiento.egreso), 0),
+    };
+};
+
 const cerrarCaja = async (datos, idUsuario) => {
     const client = await pool.connect();
     try {
@@ -224,7 +283,8 @@ const cerrarCaja = async (datos, idUsuario) => {
             `SELECT
                 (SELECT COUNT(*) FROM pedido
                  WHERE fecha::date=CURRENT_DATE AND pagado=FALSE AND UPPER(estado) NOT LIKE 'CANCEL%') AS pedidos,
-                (SELECT COUNT(*) FROM solicitud_adicional WHERE estado='PENDIENTE') AS adicionales`
+                (SELECT COUNT(*) FROM solicitud_adicional
+                 WHERE estado='PENDIENTE' AND fecha::date=CURRENT_DATE) AS adicionales`
         );
         if (Number(pendientes.rows[0].pedidos) > 0 || Number(pendientes.rows[0].adicionales) > 0) {
             throw Object.assign(new Error("Resuelve los pedidos pendientes de cobro y los adicionales antes de cerrar la caja"), { status: 409 });
@@ -437,8 +497,8 @@ const cobrarAdicional = async (idSolicitud, datos, idUsuario) => {
         );
         for (const item of solicitud.detalle) {
             await client.query(
-                "INSERT INTO detalle_pedido (id_pedido,id_producto,cantidad,precio,subtotal) VALUES ($1,$2,$3,$4,$5)",
-                [solicitud.id_pedido,item.id_producto,item.cantidad,item.precio,item.subtotal]
+                "INSERT INTO detalle_pedido (id_pedido,id_producto,cantidad,precio,subtotal,id_solicitud) VALUES ($1,$2,$3,$4,$5,$6)",
+                [solicitud.id_pedido,item.id_producto,item.cantidad,item.precio,item.subtotal,idSolicitud]
             );
         }
         await client.query("UPDATE pedido SET total=total+$1 WHERE id_pedido=$2", [total,solicitud.id_pedido]);
@@ -464,4 +524,99 @@ const cobrarAdicional = async (idSolicitud, datos, idUsuario) => {
     }
 };
 
-export default { listarPedidosCaja, listarPagos, registrarGasto, listarGastos, panelCaja, reporteCaja, abrirCaja, cerrarCaja, registrarPago, agregarDetallePedido, listarAdicionales, crearAdicional, cobrarAdicional, verificarCajaAbierta };
+const anularPago = async (idPago, datos, idUsuario) => {
+    const motivo = String(datos.motivo || "").trim();
+    if (!motivo || motivo.length > 500) {
+        throw Object.assign(new Error("Indica un motivo de anulación de hasta 500 caracteres"), { status: 400 });
+    }
+
+    const client = await pool.connect();
+    try {
+        await client.query("BEGIN");
+        await verificarCajaAbierta(client, true);
+        const resultadoPago = await client.query(
+            `SELECT pg.*,p.total AS total_pedido,p.estado AS estado_pedido
+             FROM pago pg
+             INNER JOIN pedido p ON p.id_pedido=pg.id_pedido
+             WHERE pg.id_pago=$1
+             FOR UPDATE OF pg,p`,
+            [idPago],
+        );
+        if (!resultadoPago.rowCount) throw Object.assign(new Error("Pago no encontrado"), { status: 404 });
+        const pago = resultadoPago.rows[0];
+        if (pago.estado !== "CONFIRMADO") {
+            throw Object.assign(new Error("Solo se pueden anular pagos confirmados"), { status: 409 });
+        }
+        if (String(pago.estado_pedido).toUpperCase() === "ENTREGADO") {
+            throw Object.assign(new Error("No se puede anular un pago de un pedido ya entregado"), { status: 409 });
+        }
+
+        const adicionalResult = await client.query(
+            `SELECT id_solicitud,id_pedido,total,estado,detalle
+             FROM solicitud_adicional WHERE id_pago=$1 FOR UPDATE`,
+            [idPago],
+        );
+        const adicional = adicionalResult.rows[0];
+        if (adicional) {
+            if (adicional.estado !== "COBRADO") {
+                throw Object.assign(new Error("La solicitud adicional no está cobrada"), { status: 409 });
+            }
+            const lineas = await client.query(
+                "SELECT COUNT(*)::int AS cantidad FROM detalle_pedido WHERE id_solicitud=$1",
+                [adicional.id_solicitud],
+            );
+            if (!lineas.rows[0].cantidad) {
+                throw Object.assign(new Error("No se puede revertir este adicional porque sus líneas no tienen un vínculo de auditoría"), { status: 409 });
+            }
+            await client.query("DELETE FROM detalle_pedido WHERE id_solicitud=$1", [adicional.id_solicitud]);
+            await client.query(
+                "UPDATE pedido SET total=GREATEST(total-$1,0) WHERE id_pedido=$2",
+                [adicional.total, adicional.id_pedido],
+            );
+            await client.query(
+                "UPDATE solicitud_adicional SET estado='CANCELADO' WHERE id_solicitud=$1",
+                [adicional.id_solicitud],
+            );
+        }
+
+        await client.query(
+            `UPDATE pago SET estado='ANULADO',motivo_anulacion=$1,anulado_por=$2,anulado_en=NOW()
+             WHERE id_pago=$3`,
+            [motivo,idUsuario,idPago],
+        );
+        const pagosConfirmados = await client.query(
+            "SELECT COALESCE(SUM(monto),0) AS total FROM pago WHERE id_pedido=$1 AND estado='CONFIRMADO'",
+            [pago.id_pedido],
+        );
+        const totalPedido = adicional
+            ? Number(pago.total_pedido) - Number(adicional.total)
+            : Number(pago.total_pedido);
+        const pagado = Number(pagosConfirmados.rows[0].total) >= totalPedido;
+        await client.query("UPDATE pedido SET pagado=$1 WHERE id_pedido=$2", [pagado,pago.id_pedido]);
+
+        if (pago.metodo === "EFECTIVO") {
+            const saldoCaja = await client.query(
+                "SELECT COALESCE(SUM(ingreso-egreso),0) AS total FROM caja WHERE fecha::date=CURRENT_DATE",
+            );
+            await client.query(
+                `INSERT INTO caja (fecha,concepto,ingreso,egreso,saldo,id_usuario)
+                 VALUES (NOW(),$1,0,$2,$3,$4)`,
+                [`Anulación pago #${idPago}`,pago.monto,Number(saldoCaja.rows[0].total)-Number(pago.monto),idUsuario],
+            );
+        }
+        await client.query(
+            `INSERT INTO bitacora_operaciones (id_usuario,accion,entidad,id_entidad,detalle)
+             VALUES ($1,'ANULAR','pago',$2,$3)`,
+            [idUsuario,idPago,JSON.stringify({ id_pedido: pago.id_pedido, monto: pago.monto, motivo, solicitud_adicional: adicional?.id_solicitud || null })],
+        );
+        await client.query("COMMIT");
+        return { id_pago: Number(idPago), id_pedido: pago.id_pedido, estado: "ANULADO", pedido_pagado: pagado };
+    } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+    } finally {
+        client.release();
+    }
+};
+
+export default { listarPedidosCaja, listarPagos, registrarGasto, listarGastos, panelCaja, reporteCaja, historialCaja, abrirCaja, cerrarCaja, registrarPago, anularPago, agregarDetallePedido, listarAdicionales, crearAdicional, cobrarAdicional, verificarCajaAbierta };

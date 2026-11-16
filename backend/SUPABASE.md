@@ -1,82 +1,38 @@
 # Supabase y PostgreSQL - Mi Casa
 
-## 1. Objetivo
+## Objetivo
 
-Usar una sola base de datos PostgreSQL limpia en Supabase y mantener una conexión consistente entre local y despliegue.
+Usar una sola base PostgreSQL por entorno y mantener la conexión consistente entre desarrollo local y despliegue. No mezcles proyectos, URLs antiguas ni variables duplicadas.
 
-No mezclar proyectos, URLs antiguas, conexiones de pgAdmin viejas ni variables de entorno duplicadas.
+## Variables de entorno
 
-## 2. Variables necesarias
+Configura en `backend/.env` local y en el entorno del backend desplegado:
 
-En `backend/.env` usa:
+- `DATABASE_URL`: URI PostgreSQL proporcionada por Supabase.
+- `PGSSLROOTCERT`: ruta local a `prod-ca-2021.crt`, relativa a `backend` o absoluta.
+- `PGSSLROOTCERT_PEM`: opcional; contenido PEM completo del certificado raíz (BEGIN/END CERTIFICATE). En Vercel tiene prioridad sobre `PGSSLROOTCERT` y evita depender de empaquetar el archivo.
+- `JWT_SECRET`: clave usada para firmar tokens.
 
-```env
-DATABASE_URL=postgresql://postgres:TU_PASSWORD@db.TU_PROJECT_REF.supabase.co:5432/postgres?sslmode=require
-PGSSLROOTCERT=prod-ca-2021.crt
-```
+Nunca guardes contraseñas ni claves reales en el repositorio. No configures `DATABASE_URL` en el frontend. El código valida el certificado CA y mantiene `rejectUnauthorized=true`; nunca desactiva la verificación TLS. `includeFiles` en `backend/vercel.json` queda como respaldo para archivos `.crt`.
 
-Reemplaza:
+El frontend usa `VITE_API_URL` con la URL pública del backend terminada en `/api` (por ejemplo, `https://tu-backend.vercel.app/api`). No pongas la URI de PostgreSQL en el frontend.
 
-- `TU_PASSWORD` por la contraseña real de la base de Supabase
-- `TU_PROJECT_REF` por el identificador del proyecto de Supabase
+## Verificación de conexión
 
-## 3. Certificado SSL
-
-El certificado debe estar en:
-
-- `backend/prod-ca-2021.crt`
-
-La variable `PGSSLROOTCERT` debe tener exactamente:
-
-```env
-PGSSLROOTCERT=prod-ca-2021.crt
-```
-
-El backend resuelve esta ruta relativa desde la carpeta `backend`.
-
-## 4. Recomendación para una conexión limpia
-
-1. Crear un proyecto nuevo y limpio en Supabase.
-2. Usar una sola `DATABASE_URL` para el backend.
-3. No poner esa URL en el frontend.
-4. No reutilizar conexiones de otros proyectos.
-5. Mantener un único entorno por proyecto: local, preview y producción.
-
-## 5. Variables de entorno en Vercel
-
-Backend:
-
-- `DATABASE_URL`
-- `PGSSLROOTCERT`
-- `JWT_SECRET` (si el backend lo usa)
-
-Frontend:
-
-- `VITE_API_URL=https://tu-backend.vercel.app/api`
-
-Nunca pongas `DATABASE_URL` en el frontend.
-
-## 6. Verificación rápida
-
-Desde la carpeta `backend`:
+Desde `backend`, ejecuta:
 
 ```bash
 npm run db:ping
 ```
 
-Si la conexión está bien, el comando responde con `Conexión OK`.
+Si la conexión está bien, responde `Conexión OK`. En Vercel, comprueba también `PGSSLROOTCERT_PEM`, el endpoint principal, el inicio de sesión y los permisos de Administrador, Caja y Mesero.
 
-## 7. pgAdmin
+## Migraciones y datos
 
-La conexión de pgAdmin es opcional y es independiente del backend. Se usa para inspeccionar la base, no para producir la app.
+La versión actual incluye `src/migrations/005_integral_completion.sql`, requerida por las funciones de productos, saldos de pensionados, historial de reservas, anulación de pagos y comandas. Esta migración no se ejecutó durante el desarrollo. Valida su compatibilidad en una base de pruebas y prepara un respaldo antes de aplicar cambios a una base existente.
 
-## 8. Importante
+No ejecutes `npm run migrate`, `npm run restore:data` ni `npm run db:align-sequences` sobre producción sin revisión previa. Para una base nueva, crea primero el proyecto Supabase, configura su `DATABASE_URL`, prueba con `npm run db:ping` y ejecuta las migraciones solo cuando hayas confirmado que apuntas a la base correcta. No reutilices conexiones ni secretos antiguos.
 
-Si vas a migrar a una base nueva:
+## pgAdmin
 
-- crea primero el proyecto Supabase nuevo
-- configura `DATABASE_URL` nueva
-- prueba conexión con `npm run db:ping`
-- luego ejecuta migraciones solo sobre la base correcta
-
-No vuelvas a reutilizar la base antigua ni los secretos viejos.
+pgAdmin es opcional e independiente del backend; sirve para inspeccionar la base de datos, no para ejecutar la aplicación.

@@ -11,8 +11,7 @@ export const listar = async (req, res) => {
         response.ok(res, datos);
 
     } catch (err) {
-
-        response.error(res, err.message);
+        response.error(res, err.message, err.status || 500);
 
     }
 
@@ -27,8 +26,7 @@ export const obtener = async (req, res) => {
         response.ok(res, datos);
 
     } catch (err) {
-
-        response.error(res, err.message);
+        response.error(res, err.message, err.status || 500);
 
     }
 
@@ -43,8 +41,7 @@ export const crear = async (req, res) => {
         response.ok(res, datos);
 
     } catch (err) {
-
-        response.error(res, err.message);
+        response.error(res, err.code === "23505" ? "Ya existe un usuario con ese nombre" : err.message, err.status || (err.code === "23505" ? 409 : 500));
 
     }
 
@@ -65,8 +62,7 @@ export const actualizar = async (req, res) => {
         response.ok(res, datos);
 
     } catch (err) {
-
-        response.error(res, err.message);
+        response.error(res, err.code === "23505" ? "Ya existe un usuario con ese nombre" : err.message, err.status || (err.code === "23505" ? 409 : 500));
 
     }
 
@@ -81,8 +77,7 @@ export const eliminar = async (req, res) => {
         response.ok(res, datos);
 
     } catch (err) {
-
-        response.error(res, err.message);
+        response.error(res, err.message, err.status || (err.code === "23505" ? 409 : 500));
 
     }
 

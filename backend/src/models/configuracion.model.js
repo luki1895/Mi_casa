@@ -38,67 +38,50 @@ const obtener = async () => {
 };
 
 const actualizar = async (datos) => {
+    const camposPrecio = [
+        "precio_sopa",
+        "precio_segundo",
+        "precio_plato_extra",
+        "precio_entrada",
+        "precio_refresco",
+    ];
+    const campos = [];
+    const valores = [];
 
-    const {
+    for (const campo of camposPrecio) {
+        if (!Object.prototype.hasOwnProperty.call(datos, campo)) continue;
+        const valor = Number(datos[campo]);
+        if (!Number.isFinite(valor) || valor < 0) {
+            throw Object.assign(new Error(`${campo} debe ser un número no negativo`), { status: 400 });
+        }
+        valores.push(valor);
+        campos.push(`${campo}=$${valores.length}`);
+    }
 
-        precio_almuerzo,
+    if (Object.prototype.hasOwnProperty.call(datos, "capacidad_reservas")) {
+        const capacidad = datos.capacidad_reservas === null || datos.capacidad_reservas === ""
+            ? null
+            : Number(datos.capacidad_reservas);
+        if (capacidad !== null && (!Number.isInteger(capacidad) || capacidad < 1)) {
+            throw Object.assign(new Error("La capacidad de reservas debe ser un entero positivo o estar sin límite"), { status: 400 });
+        }
+        valores.push(capacidad);
+        campos.push(`capacidad_reservas=$${valores.length}`);
+    }
 
-        precio_sopa,
-
-        precio_segundo,
-
-        precio_plato_extra,
-
-        precio_entrada,
-
-        precio_refresco
-
-    } = datos;
+    if (!campos.length) {
+        throw Object.assign(new Error("No se proporcionaron campos de configuración válidos"), { status: 400 });
+    }
 
     const resultado = await pool.query(
-
-        `
-
-        UPDATE configuracion
-
-        SET
-
-        precio_almuerzo = $1,
-
-        precio_sopa = $2,
-
-        precio_segundo = $3,
-
-        precio_plato_extra = $4,
-
-        precio_entrada = $5,
-
-        precio_refresco = $6
-
-        WHERE id_configuracion = 1
-
-        `,
-
-        [
-
-            precio_almuerzo,
-
-            precio_sopa,
-
-            precio_segundo,
-
-            precio_plato_extra
-
-            ,precio_entrada
-
-            ,precio_refresco
-
-        ]
-
+        `UPDATE configuracion SET ${campos.join(", ")}, actualizado_en=NOW()
+         WHERE id_configuracion=1 RETURNING *`,
+        valores,
     );
-
+    if (!resultado.rowCount) {
+        throw Object.assign(new Error("No existe la configuración del sistema"), { status: 404 });
+    }
     return resultado;
-
 };
 
 export default {

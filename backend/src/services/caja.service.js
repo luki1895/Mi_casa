@@ -9,6 +9,8 @@ const panel=()=>operacionesModel.panelCaja();
 
 const reportes=()=>operacionesModel.reporteCaja();
 
+const historial=(fecha)=>operacionesModel.historialCaja(fecha);
+
 const pedidos=()=>operacionesModel.listarPedidosCaja();
 
 const abrir=(datos,idUsuario)=>operacionesModel.abrirCaja(datos,idUsuario);
@@ -16,6 +18,8 @@ const abrir=(datos,idUsuario)=>operacionesModel.abrirCaja(datos,idUsuario);
 const pagos=()=>operacionesModel.listarPagos();
 
 const cobrar=(idPedido,datos,idUsuario)=>operacionesModel.registrarPago(idPedido,datos,idUsuario);
+
+const anularPago=(idPago,datos,idUsuario)=>operacionesModel.anularPago(idPago,datos,idUsuario);
 
 const cerrar=(datos,idUsuario)=>operacionesModel.cerrarCaja(datos,idUsuario);
 
@@ -37,6 +41,8 @@ panel,
 
 reportes,
 
+historial,
+
 pedidos,
 
 abrir,
@@ -44,6 +50,8 @@ abrir,
 pagos,
 
 cobrar,
+
+anularPago,
 
 cerrar,
 

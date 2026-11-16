@@ -5,14 +5,6 @@ const normalizarTexto = (valor) => {
     return String(valor).trim();
 };
 
-const validarSaldo = (campo, valor) => {
-    if (valor === undefined || valor === null || valor === "") return;
-    const saldo = Number(valor);
-    if (!Number.isInteger(saldo) || saldo < 0) {
-        throw Object.assign(new Error(`El campo ${campo} debe ser un entero no negativo`), { status: 400 });
-    }
-};
-
 const guardarDatosPersona = async (idCliente, datos = {}) => {
     const nombreCompleto = normalizarTexto(datos.nombre_completo || datos.nombre || "");
     const ci = normalizarTexto(datos.ci || "");
@@ -63,6 +55,24 @@ const guardarDatosPersona = async (idCliente, datos = {}) => {
         `UPDATE persona SET ${campos.join(", ")} WHERE id_persona = $${params.length}`,
         params
     );
+
+    const camposCliente = [];
+    const parametrosCliente = [];
+    if (nombreCompleto) {
+        parametrosCliente.push(nombreCompleto);
+        camposCliente.push(`nombre = $${parametrosCliente.length}`);
+    }
+    if (telefono) {
+        parametrosCliente.push(telefono);
+        camposCliente.push(`telefono = $${parametrosCliente.length}`);
+    }
+    if (camposCliente.length) {
+        parametrosCliente.push(idCliente);
+        await pool.query(
+            `UPDATE cliente SET ${camposCliente.join(", ")} WHERE id_cliente = $${parametrosCliente.length}`,
+            parametrosCliente
+        );
+    }
 };
 
 const listar = async () => {
@@ -71,11 +81,10 @@ const listar = async () => {
 
         `
 
-        SELECT *
-
-        FROM cliente
-
-        ORDER BY nombre ASC
+        SELECT c.*, p.ci, p.email AS correo
+        FROM cliente c
+        LEFT JOIN persona p ON p.id_persona = c.id_persona
+        ORDER BY c.nombre ASC
 
         `
 
@@ -137,7 +146,7 @@ const crearReserva = async (idUsuario, datos) => {
     const fecha = String(datos.fecha || "");
     const hora = String(datos.hora || "");
     const personas = Number(datos.cantidad_personas);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha) || !/^\d{2}:\d{2}$/.test(hora) || !Number.isInteger(persones) || personas < 1) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha) || !/^\d{2}:\d{2}$/.test(hora) || !Number.isInteger(personas) || personas < 1) {
         throw Object.assign(new Error("Indica una hora y una cantidad válida de personas para la reserva"), { status: 400 });
     }
     const cliente = await pool.query(
@@ -184,11 +193,10 @@ const obtener = async (id) => {
 
         `
 
-        SELECT *
-
-        FROM cliente
-
-        WHERE id_cliente=$1
+        SELECT c.*, p.ci, p.email AS correo
+        FROM cliente c
+        LEFT JOIN persona p ON p.id_persona = c.id_persona
+        WHERE c.id_cliente=$1
 
         `,
 
@@ -200,25 +208,8 @@ const obtener = async (id) => {
 
 };
 
-const aplicarInicialPensionado = (datos) => {
-    if (String(datos.tipo_cliente || "").toUpperCase() !== "PENSIONADO") return datos;
-
-    const saldoSopas = datos.saldo_sopas === "" || datos.saldo_sopas === undefined || datos.saldo_sopas === null
-        ? 26
-        : Number(datos.saldo_sopas);
-    const saldoSegundos = datos.saldo_segundos === "" || datos.saldo_segundos === undefined || datos.saldo_segundos === null
-        ? 26
-        : Number(datos.saldo_segundos);
-
-    return {
-        ...datos,
-        saldo_sopas: Number.isInteger(saldoSopas) ? saldoSopas : 26,
-        saldo_segundos: Number.isInteger(saldoSegundos) ? saldoSegundos : 26,
-    };
-};
-
 const crear = async (datos, db = pool) => {
-    const clienteData = aplicarInicialPensionado({ ...datos });
+    const clienteData = { ...datos };
     const {
         nombre,
         nombre_completo,
@@ -230,8 +221,9 @@ const crear = async (datos, db = pool) => {
         estado,
     } = clienteData;
 
-    validarSaldo("saldo_sopas", saldo_sopas);
-    validarSaldo("saldo_segundos", saldo_segundos);
+    if (saldo_sopas !== undefined || saldo_segundos !== undefined) {
+        throw Object.assign(new Error("Los saldos de sopa y segundo deben registrarse mediante una reposición"), { status: 400 });
+    }
 
     const nombreCliente = normalizarTexto(nombre_completo || nombre || "");
     const telefonoCliente = normalizarTexto(telefono || "");
@@ -242,13 +234,13 @@ const crear = async (datos, db = pool) => {
          VALUES ($1, $2, $3, $4, $5, $6, $7)
          RETURNING id_cliente`,
         [
-           nombreCliente || "Cliente",
-           telefonoCliente || null,
-           tipo_cliente,
-           saldo_pensiones ?? 0,
-           saldo_sopas ?? 26,
-           saldo_segundos ?? 26,
-           estado ?? true,
+            nombreCliente || "Cliente",
+            telefonoCliente || null,
+            tipo_cliente,
+            saldo_pensiones ?? 0,
+            null,
+            null,
+            estado ?? true,
         ]
     );
 
@@ -261,35 +253,15 @@ const crear = async (datos, db = pool) => {
 };
 
 const actualizar = async (id, datos) => {
-    const tieneRenovacion = String(datos.renovar ?? "").toLowerCase() === "true" || datos.renovar === true;
-
-    if (tieneRenovacion && String(datos.tipo_cliente || "").toUpperCase() === "PENSIONADO") {
-        const clienteActual = await pool.query(
-           `SELECT saldo_sopas, saldo_segundos FROM cliente WHERE id_cliente=$1`,
-           [id],
-        );
-
-        const actual = clienteActual.rows[0] || {};
-        const saldoSopasActual = Number(actual.saldo_sopas ?? 0);
-        const saldoSegundosActual = Number(actual.saldo_segundos ?? 0);
-
-        if (saldoSopasActual > 0 || saldoSegundosActual > 0) {
-           datos = {
-               ...datos,
-               saldo_sopas: saldoSopasActual + 26,
-               saldo_segundos: saldoSegundosActual + 26,
-               renovar: false,
-           };
-        }
+    if (Object.prototype.hasOwnProperty.call(datos, "saldo_sopas")
+        || Object.prototype.hasOwnProperty.call(datos, "saldo_segundos")) {
+        throw Object.assign(new Error("Los saldos de sopa y segundo deben modificarse mediante movimientos pensionados"), { status: 400 });
     }
-
     const camposPermitidos = [
         "nombre",
         "telefono",
         "tipo_cliente",
         "saldo_pensiones",
-        "saldo_sopas",
-        "saldo_segundos",
         "estado",
     ];
     const campos = [];
@@ -298,8 +270,7 @@ const actualizar = async (id, datos) => {
     for (const campo of camposPermitidos) {
         if (!Object.prototype.hasOwnProperty.call(datos, campo)) continue;
         const valor = datos[campo];
-        if (campo === "saldo_sopas" || campo === "saldo_segundos") validarSaldo(campo, valor);
-        valores.push(valor === "" && (campo === "saldo_sopas" || campo === "saldo_segundos") ? null : valor);
+        valores.push(valor);
         campos.push(`${campo}=$${valores.length}`);
     }
 
@@ -329,13 +300,9 @@ const eliminar = async (id) => {
 
     const resultado = await pool.query(
 
-        `
-
-        DELETE FROM cliente
-
-        WHERE id_cliente=$1
-
-        `,
+        `UPDATE cliente SET estado=FALSE
+         WHERE id_cliente=$1
+         RETURNING id_cliente`,
 
         [id]
 

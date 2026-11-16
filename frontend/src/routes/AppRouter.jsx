@@ -17,6 +17,9 @@ import Produccion from "../pages/Produccion/Produccion";
 import Reportes from "../pages/Reportes/Reportes";
 import Configuracion from "../pages/Configuracion/Configuracion";
 import Menu from "../pages/Menu/Menu";
+import Productos from "../pages/Productos/Productos";
+import Reservas from "../pages/Reservas/Reservas";
+import Pensiones from "../pages/Pensiones/Pensiones";
 
 function AppRouter() {
     return (
@@ -45,7 +48,7 @@ function AppRouter() {
 
                 <Route
                     element={
-                        <ProtectedRoute allowedRoles={["admin", "caja", "empleado"]}>
+                        <ProtectedRoute allowedRoles={["admin", "caja", "mesero"]}>
                             <MainLayout />
                         </ProtectedRoute>
                     }
@@ -54,6 +57,9 @@ function AppRouter() {
                     <Route path="/usuarios" element={<ProtectedRoute allowedRoles={["admin"]}><Usuarios /></ProtectedRoute>} />
                     <Route path="/clientes" element={<ProtectedRoute allowedRoles={["admin"]}><Clientes /></ProtectedRoute>} />
                     <Route path="/menu" element={<ProtectedRoute allowedRoles={["admin"]}><Menu /></ProtectedRoute>} />
+                    <Route path="/productos" element={<ProtectedRoute allowedRoles={["admin"]}><Productos /></ProtectedRoute>} />
+                    <Route path="/reservas" element={<ProtectedRoute allowedRoles={["admin", "caja"]}><Reservas /></ProtectedRoute>} />
+                    <Route path="/pensiones" element={<ProtectedRoute allowedRoles={["admin", "caja", "mesero"]}><Pensiones /></ProtectedRoute>} />
                     <Route path="/pedidos" element={<ProtectedRoute allowedRoles={["admin"]}><Pedidos /></ProtectedRoute>} />
                     <Route path="/caja" element={<ProtectedRoute allowedRoles={["admin", "caja"]}><Caja /></ProtectedRoute>} />
                     <Route path="/produccion" element={<ProtectedRoute allowedRoles={["admin"]}><Produccion /></ProtectedRoute>} />

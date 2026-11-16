@@ -9,4 +9,6 @@ const router=Router();
 
 router.get("/dashboard",verificarToken,autorizarRoles("admin"),reporte.dashboard);
 
+router.get("/operativo",verificarToken,autorizarRoles("admin"),reporte.operativo);
+
 export default router;

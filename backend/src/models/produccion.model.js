@@ -1,7 +1,9 @@
 import pool from "../config/db.js";
 
 const listarProductos = async () => {
-	const { rows } = await pool.query("SELECT id_producto, nombre FROM producto ORDER BY nombre ASC");
+	const { rows } = await pool.query(
+		"SELECT id_producto, nombre, categoria FROM producto WHERE activo IS TRUE ORDER BY nombre ASC"
+	);
 	return rows;
 };
 
@@ -56,7 +58,7 @@ const listarMenu = async (fecha, db = pool, incluirAgotados = false) => {
 		             AND (item->>'id_producto')::integer=m.id_producto
 		       ),0), 0) AS stock
 		FROM menu m
-		INNER JOIN producto p ON p.id_producto = m.id_producto
+		INNER JOIN producto p ON p.id_producto = m.id_producto AND p.activo IS TRUE
 		LEFT JOIN detalle_pedido dp ON dp.id_producto = m.id_producto
 		LEFT JOIN pedido pe ON pe.id_pedido = dp.id_pedido
 		                    AND pe.fecha::date = $1::date
@@ -146,11 +148,49 @@ return rows;
 };
 
 const crear=async(datos, idUsuario)=>{
+	const fecha = String(datos.fecha || "");
+	const fechaParseada = new Date(`${fecha}T00:00:00Z`);
+	if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)
+		|| Number.isNaN(fechaParseada.getTime())
+		|| fechaParseada.toISOString().slice(0, 10) !== fecha) {
+		throw Object.assign(new Error("La fecha de producción no es válida"), { status: 400 });
+	}
+	const campos = [
+		["SOPA", datos.id_sopa, datos.cantidad_sopa],
+		["SEGUNDO", datos.id_segundo1, datos.cantidad_segundo1],
+		["SEGUNDO", datos.id_segundo2, datos.cantidad_segundo2],
+		["ENTRADA", datos.id_entrada, datos.cantidad_entrada],
+		["REFRESCO", datos.id_refresco, datos.cantidad_refresco],
+		["EXTRA", datos.id_plato_extra, datos.cantidad_extra],
+	];
+	for (const [categoria, idProducto, cantidad] of campos) {
+		const unidades = Number(cantidad ?? 0);
+		if (!Number.isInteger(unidades) || unidades < 0 || (!idProducto && unidades !== 0)) {
+			throw Object.assign(new Error("Las cantidades deben ser enteros no negativos asociados a un producto"), { status: 400 });
+		}
+		if (idProducto && (!Number.isInteger(Number(idProducto)) || Number(idProducto) < 1)) {
+			throw Object.assign(new Error("El producto seleccionado no es válido"), { status: 400 });
+		}
+	}
+	if (datos.precio_extra !== undefined && datos.precio_extra !== null
+		&& (!Number.isFinite(Number(datos.precio_extra)) || Number(datos.precio_extra) < 0)) {
+		throw Object.assign(new Error("El precio especial debe ser un número no negativo"), { status: 400 });
+	}
 	const client = await pool.connect();
 	try {
 		await client.query("BEGIN");
-		await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`menu:${datos.fecha}`]);
-		const menuActual = await listarMenu(datos.fecha, client, true);
+		await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`menu:${fecha}`]);
+		for (const [categoria, idProducto] of campos) {
+			if (!idProducto) continue;
+			const producto = await client.query(
+				"SELECT categoria, activo FROM producto WHERE id_producto=$1 FOR SHARE",
+				[idProducto]
+			);
+			if (!producto.rowCount || producto.rows[0].activo !== true || producto.rows[0].categoria !== categoria) {
+				throw Object.assign(new Error(`El producto debe estar activo y pertenecer a la categoría ${categoria}`), { status: 400 });
+			}
+		}
+		const menuActual = await listarMenu(fecha, client, true);
 		const cantidadesNuevas = new Map();
 		[
 			[datos.id_sopa, datos.cantidad_sopa],
@@ -173,7 +213,7 @@ const crear=async(datos, idUsuario)=>{
 			[datos.fecha]
 		);
 		const valores = [
-			datos.fecha,
+			fecha,
 			datos.id_sopa || null,
 			datos.id_segundo1 || null,
 			datos.id_segundo2 || null,

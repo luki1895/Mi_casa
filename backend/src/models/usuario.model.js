@@ -2,8 +2,9 @@
 import pool from "../config/db.js";
 import { normalizarRol } from "../middlewares/autorizarRoles.js";
 
-const rolesPermitidos = new Set(["admin", "caja", "mesero", "cliente", "empleado"]);
+const rolesPermitidos = new Set(["admin", "caja", "mesero", "cliente"]);
 const columnasPublicas = "id_usuario, id_persona, id_cliente, usuario, rol, estado, creado_en";
+const columnasConPersona = "u.id_usuario, u.id_persona, u.id_cliente, u.usuario, u.rol, u.estado, u.creado_en, p.nombre AS nombre_completo, p.ci, p.email AS correo, p.telefono";
 
 const normalizarTexto = (valor) => {
     if (valor === undefined || valor === null) return "";
@@ -11,12 +12,13 @@ const normalizarTexto = (valor) => {
 };
 
 const normalizarEstado = (valor) => {
-    if (valor === undefined || valor === null) return undefined;
+    if (valor === undefined) return undefined;
+    if (valor === null) throw Object.assign(new Error("El estado del usuario no es válido"), { status: 400 });
     if (typeof valor === "boolean") return valor;
     const texto = String(valor).trim().toLowerCase();
     if (["true", "activo", "enabled", "1", "si", "yes"].includes(texto)) return true;
     if (["false", "inactivo", "disabled", "0", "no"].includes(texto)) return false;
-    return Boolean(valor);
+    throw Object.assign(new Error("El estado del usuario no es válido"), { status: 400 });
 };
 
 const guardarDatosPersona = async (idUsuario, datos = {}) => {
@@ -72,12 +74,23 @@ const guardarDatosPersona = async (idUsuario, datos = {}) => {
 };
 
 const listar = async () => {
-    const { rows } = await pool.query(`SELECT ${columnasPublicas} FROM usuario ORDER BY id_usuario DESC`);
+    const { rows } = await pool.query(
+        `SELECT ${columnasConPersona}
+         FROM usuario u
+         LEFT JOIN persona p ON p.id_persona=u.id_persona
+         ORDER BY u.id_usuario DESC`
+    );
     return rows;
 };
 
 const obtener = async (id) => {
-    const { rows } = await pool.query(`SELECT ${columnasPublicas} FROM usuario WHERE id_usuario=$1`, [id]);
+    const { rows } = await pool.query(
+        `SELECT ${columnasConPersona}
+         FROM usuario u
+         LEFT JOIN persona p ON p.id_persona=u.id_persona
+         WHERE u.id_usuario=$1`,
+        [id]
+    );
     return rows[0];
 };
 
@@ -95,13 +108,16 @@ const crear = async (datos = {}) => {
     const rolNormalizado = normalizarRol(rol);
 
     if (!nombreUsuario) {
-        throw new Error("El nombre de usuario es obligatorio");
+        throw Object.assign(new Error("El nombre de usuario es obligatorio"), { status: 400 });
+    }
+    if (nombreUsuario.length > 80) {
+        throw Object.assign(new Error("El nombre de usuario no debe superar 80 caracteres"), { status: 400 });
     }
     if (!clave) {
-        throw new Error("La contraseña es obligatoria");
+        throw Object.assign(new Error("La contraseña es obligatoria"), { status: 400 });
     }
     if (!rolesPermitidos.has(rolNormalizado)) {
-        throw new Error("El rol seleccionado no es válido");
+        throw Object.assign(new Error("El rol seleccionado no es válido"), { status: 400 });
     }
 
     const passwordHash = await bcrypt.hash(clave, 10);
@@ -121,16 +137,21 @@ const crear = async (datos = {}) => {
         await guardarDatosPersona(resultado.rows[0].id_usuario, datos);
     }
 
-    return resultado;
+    return obtener(resultado.rows[0].id_usuario);
 };
 
 const actualizar = async (id, datos = {}) => {
     const { usuario, password, rol, estado } = datos;
     const campos = [];
     const params = [];
+    let rolNormalizado;
 
     if (usuario !== undefined && String(usuario).trim()) {
-        params.push(String(usuario).trim());
+        const nombreUsuario = String(usuario).trim();
+        if (nombreUsuario.length > 80) {
+            throw Object.assign(new Error("El nombre de usuario no debe superar 80 caracteres"), { status: 400 });
+        }
+        params.push(nombreUsuario);
         campos.push(`usuario = $${params.length}`);
     }
 
@@ -140,43 +161,58 @@ const actualizar = async (id, datos = {}) => {
     }
 
     if (rol !== undefined && String(rol).trim()) {
-        const rolNormalizado = normalizarRol(rol);
+        rolNormalizado = normalizarRol(rol);
         if (!rolesPermitidos.has(rolNormalizado)) {
-            throw new Error("El rol seleccionado no es válido");
+            throw Object.assign(new Error("El rol seleccionado no es válido"), { status: 400 });
         }
         params.push(rolNormalizado);
         campos.push(`rol = $${params.length}`);
     }
 
     if (estado !== undefined) {
-        params.push(normalizarEstado(estado));
+        const estadoNormalizado = normalizarEstado(estado);
+        if (estadoNormalizado === true && !rolNormalizado) {
+            const existente = await pool.query("SELECT rol, estado FROM usuario WHERE id_usuario=$1", [id]);
+            if (!existente.rows[0]) throw Object.assign(new Error("Usuario no encontrado"), { status: 404 });
+            if (existente.rows[0].rol === "empleado" && !existente.rows[0].estado) {
+                throw Object.assign(new Error("Asigna un rol vigente antes de reactivar esta cuenta"), { status: 400 });
+            }
+        }
+        params.push(estadoNormalizado);
         campos.push(`estado = $${params.length}`);
     }
 
-    if (campos.length) {
-        params.push(id);
-        const resultado = await pool.query(
-            `UPDATE usuario SET ${campos.join(", ")} WHERE id_usuario = $${params.length} RETURNING ${columnasPublicas}`,
-            params
-        );
-
-        if (resultado.rows[0]?.id_usuario) {
-            await guardarDatosPersona(resultado.rows[0].id_usuario, datos);
+    if (!campos.length) {
+        const usuarioActual = await obtener(id);
+        if (!usuarioActual) throw Object.assign(new Error("Usuario no encontrado"), { status: 404 });
+        if (datos.nombre_completo || datos.nombre || datos.ci || datos.correo || datos.email || datos.telefono) {
+            await guardarDatosPersona(id, datos);
         }
-
-        return resultado;
+        return obtener(id);
     }
 
+    params.push(id);
+    const resultado = await pool.query(
+        `UPDATE usuario SET ${campos.join(", ")} WHERE id_usuario = $${params.length} RETURNING ${columnasPublicas}`,
+        params
+    );
+    if (!resultado.rows[0]) throw Object.assign(new Error("Usuario no encontrado"), { status: 404 });
     if (datos.nombre_completo || datos.nombre || datos.ci || datos.correo || datos.email || datos.telefono) {
         await guardarDatosPersona(id, datos);
     }
 
-    return await pool.query(`SELECT ${columnasPublicas} FROM usuario WHERE id_usuario=$1`, [id]);
+    return obtener(id);
 };
 
 const eliminar = async (id) => {
-    const resultado = await pool.query("DELETE FROM usuario WHERE id_usuario=$1", [id]);
-    return resultado;
+    const resultado = await pool.query(
+        `UPDATE usuario SET estado=FALSE
+         WHERE id_usuario=$1
+         RETURNING ${columnasPublicas}`,
+        [id]
+    );
+    if (!resultado.rows[0]) throw Object.assign(new Error("Usuario no encontrado"), { status: 404 });
+    return resultado.rows[0];
 };
 
 export default {

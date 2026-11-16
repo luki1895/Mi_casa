@@ -2,6 +2,7 @@ import dotenv from "dotenv";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { X509Certificate } from "node:crypto";
 import { Pool } from "pg";
 
 const backendDirectory = fileURLToPath(new URL("../../", import.meta.url));
@@ -41,18 +42,44 @@ if (sslMode && !["require", "verify-ca", "verify-full"].includes(sslMode)) {
 }
 
 const rootCertificatePath = process.env.PGSSLROOTCERT?.trim();
+const rootCertificatePem = process.env.PGSSLROOTCERT_PEM?.trim().replace(/\\n/g, "\n");
 const ssl = { rejectUnauthorized: true };
 
-if (rootCertificatePath) {
+const validateRootCertificate = (certificate) => {
+    const certificates = certificate.match(
+        /-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g,
+    );
+    const contentWithoutCertificates = certificate.replace(
+        /-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g,
+        "",
+    );
+
+    if (!certificates?.length || contentWithoutCertificates.trim()) {
+        throw new Error("El certificado raíz debe contener certificados PEM válidos.");
+    }
+
+    for (const pem of certificates) {
+        if (!new X509Certificate(pem).ca) {
+            throw new Error("PGSSLROOTCERT debe contener únicamente certificados de autoridad (CA).");
+        }
+    }
+
+    return certificate;
+};
+
+if (rootCertificatePem) {
+    ssl.ca = validateRootCertificate(rootCertificatePem);
+} else if (rootCertificatePath) {
     try {
-        ssl.ca = await readFile(
+        const certificate = await readFile(
             path.isAbsolute(rootCertificatePath)
                 ? rootCertificatePath
                 : path.resolve(backendDirectory, rootCertificatePath),
             "utf8",
         );
+        ssl.ca = validateRootCertificate(certificate);
     } catch (error) {
-        throw new Error(`No se pudo leer el certificado raíz PGSSLROOTCERT: ${error.message}`);
+        throw new Error(`No se pudo cargar el certificado raíz PGSSLROOTCERT: ${error.message}`);
     }
 }
 

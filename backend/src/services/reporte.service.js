@@ -1,6 +1,8 @@
 import reporteModel from "../models/reporte.model.js";
 import produccionModel from "../models/produccion.model.js";
 
+const operativo=(desde,hasta)=>reporteModel.operativo(desde,hasta);
+
 const dashboard=async()=>{
 
 const ventas=await reporteModel.ventasHoy();
@@ -43,6 +45,8 @@ eventuales
 };
 
 export default{
+
+operativo,
 
 dashboard
 

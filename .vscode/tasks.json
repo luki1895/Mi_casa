@@ -1,0 +1,193 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Check Supabase connection",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				"backend\\src\\check-supabase.js"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Migrate Supabase schema",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				"backend\\src\\migrate.js"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Align Supabase ID sequences",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				"backend\\src\\align-sequences.js"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Build frontend",
+			"type": "shell",
+			"command": "npm.cmd",
+			"args": [
+				"run",
+				"build",
+				"--prefix",
+				"frontend"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Test Vercel backend entry",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				"--test",
+				"backend\\src\\deployment-smoke.test.js"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Check git working tree",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"status",
+				"--short",
+				"--branch"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Inspect git changes",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"status",
+				"--short",
+				"--branch"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Review SSL fix diff",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"diff",
+				"--",
+				"backend/.env.example",
+				"backend/SUPABASE.md",
+				"backend/package.json",
+				"backend/src/config/db.js",
+				"backend/vercel.json",
+				"backend/src/deployment-smoke.test.js"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Run backend deployment test",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				"--test",
+				"backend/src/deployment-smoke.test.js"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Check branch upstream",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"rev-parse",
+				"--abbrev-ref",
+				"--symbolic-full-name",
+				"@{u}"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Stage application fixes",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"add",
+				"backend/.env.example",
+				"backend/SUPABASE.md",
+				"backend/package.json",
+				"backend/src/config/db.js",
+				"backend/src/vercel.json",
+				"backend/src/deployment-smoke.test.js",
+				"backend/src/align-sequences.js",
+				"backend/src/check-supabase.js",
+				"backend/src/restore-backup-data.js"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Verify staged files",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"status",
+				"--short",
+				"--branch"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Stage SSL commit files",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"add",
+				"backend/.env.example",
+				"backend/SUPABASE.md",
+				"backend/package.json",
+				"backend/src/config/db.js",
+				"backend/vercel.json",
+				"backend/src/deployment-smoke.test.js",
+				"backend/src/align-sequences.js",
+				"backend/src/check-supabase.js",
+				"backend/src/restore-backup-data.js"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Stage TLS files only",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"add",
+				"backend/.env.example",
+				"backend/SUPABASE.md",
+				"backend/package.json",
+				"backend/src/config/db.js",
+				"backend/vercel.json",
+				"backend/src/deployment-smoke.test.js",
+				"backend/src/align-sequences.js",
+				"backend/src/check-supabase.js",
+				"backend/src/restore-backup-data.js"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		}
+	]
+}
