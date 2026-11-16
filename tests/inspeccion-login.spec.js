@@ -14,6 +14,7 @@ test('Mi Casa - inspección de inicio de sesión', async ({ page }) => {
   });
 
   await expect(page.locator('body')).toBeVisible();
+  await expect(page.getByText('Credenciales del administrador:', { exact: true })).toHaveCount(0);
 
   console.log('\n========== INSPECCIÓN LOGIN ==========');
   console.log('URL:', page.url());

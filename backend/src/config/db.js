@@ -1,3 +1,4 @@
+
 import dotenv from "dotenv";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
@@ -6,12 +7,15 @@ import { X509Certificate } from "node:crypto";
 import { Pool } from "pg";
 
 const backendDirectory = fileURLToPath(new URL("../../", import.meta.url));
-dotenv.config({ path: path.join(backendDirectory, ".env") });
+
+dotenv.config({
+    path: path.join(backendDirectory, ".env"),
+});
 
 const connectionString = process.env.DATABASE_URL?.trim();
 
 if (!connectionString) {
-    throw new Error("Falta DATABASE_URL. Configúrala en backend/.env o en el entorno del servidor.");
+    throw new Error("Falta DATABASE_URL. Configúrala en backend/.env o en Vercel.");
 }
 
 let parsedConnectionString;
@@ -23,35 +27,46 @@ try {
 }
 
 if (!["postgres:", "postgresql:"].includes(parsedConnectionString.protocol)) {
-    throw new Error("DATABASE_URL debe usar el protocolo postgres:// o postgresql://.");
+    throw new Error("DATABASE_URL debe utilizar postgres:// o postgresql://.");
 }
 
 if (
-    !parsedConnectionString.hostname
-    || !parsedConnectionString.username
-    || !parsedConnectionString.password
-    || parsedConnectionString.pathname.length < 2
+    !parsedConnectionString.hostname ||
+    !parsedConnectionString.username ||
+    !parsedConnectionString.password ||
+    parsedConnectionString.pathname.length < 2
 ) {
     throw new Error("DATABASE_URL debe incluir host, usuario y contraseña.");
 }
 
 const sslMode = parsedConnectionString.searchParams.get("sslmode")?.toLowerCase();
 
-if (sslMode && !["require", "verify-ca", "verify-full"].includes(sslMode)) {
-    throw new Error("DATABASE_URL debe usar sslmode=require o una modalidad de verificación más estricta.");
+if (
+    sslMode &&
+    !["require", "verify-ca", "verify-full"].includes(sslMode)
+) {
+    throw new Error("DATABASE_URL tiene un sslmode no permitido.");
 }
 
 const rootCertificatePath = process.env.PGSSLROOTCERT?.trim();
-const rootCertificatePem = process.env.PGSSLROOTCERT_PEM?.trim().replace(/\\n/g, "\n");
-const ssl = { rejectUnauthorized: true };
+
+// Permite PEM con saltos de línea reales o escritos como \n.
+const rootCertificatePem = process.env.PGSSLROOTCERT_PEM
+    ?.replace(/\\n/g, "\n")
+    .trim();
+
+const ssl = {
+    rejectUnauthorized: true,
+};
 
 const validateRootCertificate = (certificate) => {
     const certificates = certificate.match(
-        /-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g,
+        /-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g
     );
+
     const contentWithoutCertificates = certificate.replace(
         /-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g,
-        "",
+        ""
     );
 
     if (!certificates?.length || contentWithoutCertificates.trim()) {
@@ -60,32 +75,40 @@ const validateRootCertificate = (certificate) => {
 
     for (const pem of certificates) {
         if (!new X509Certificate(pem).ca) {
-            throw new Error("PGSSLROOTCERT debe contener únicamente certificados de autoridad (CA).");
+            throw new Error("PGSSLROOTCERT debe contener certificados de autoridad (CA).");
         }
     }
 
     return certificate;
 };
 
+// Primero utiliza el certificado PEM de Vercel.
+// Si no existe, busca el archivo local.
 if (rootCertificatePem) {
     ssl.ca = validateRootCertificate(rootCertificatePem);
+
 } else if (rootCertificatePath) {
     try {
-        const certificate = await readFile(
-            path.isAbsolute(rootCertificatePath)
-                ? rootCertificatePath
-                : path.resolve(backendDirectory, rootCertificatePath),
-            "utf8",
-        );
+        const certificatePath = path.isAbsolute(rootCertificatePath)
+            ? rootCertificatePath
+            : path.resolve(backendDirectory, rootCertificatePath);
+
+        const certificate = await readFile(certificatePath, "utf8");
+
         ssl.ca = validateRootCertificate(certificate);
+
     } catch (error) {
-        throw new Error(`No se pudo cargar el certificado raíz PGSSLROOTCERT: ${error.message}`);
+        throw new Error(
+            `No se pudo cargar el certificado raíz PGSSLROOTCERT: ${error.message}`
+        );
     }
 }
 
 const pool = new Pool({
     host: parsedConnectionString.hostname,
-    port: parsedConnectionString.port ? Number(parsedConnectionString.port) : 5432,
+    port: parsedConnectionString.port
+        ? Number(parsedConnectionString.port)
+        : 5432,
     user: decodeURIComponent(parsedConnectionString.username),
     password: decodeURIComponent(parsedConnectionString.password),
     database: decodeURIComponent(parsedConnectionString.pathname.slice(1)),

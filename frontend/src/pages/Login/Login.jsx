@@ -4,8 +4,6 @@ import useAuth from "../../hooks/useAuth";
 import api from "../../api/axios";
 import { normalizeRole } from "../../auth/roles";
 
-const demoCredentialsVisible = import.meta.env.DEV || import.meta.env.VITE_ENABLE_DEMO_LOGIN === "true";
-
 function Login() {
     const [form, setForm] = useState({ username: "", password: "" });
     const [error, setError] = useState("");
@@ -164,15 +162,6 @@ function Login() {
                             </div>
                         )}
 
-                        {demoCredentialsVisible && (
-                            <div className="mt-8 rounded-2xl bg-amber-50 p-4 text-sm text-slate-700">
-                                <p className="font-semibold text-slate-900">Credenciales del administrador:</p>
-                                <ul className="mt-2 space-y-1">
-                                    <li>Usuario: luisfernando</li>
-                                    <li>Contraseña: MiCasa2025!</li>
-                                </ul>
-                            </div>
-                        )}
                     </div>
                 </div>
             </div>
