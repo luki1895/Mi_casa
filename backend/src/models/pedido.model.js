@@ -208,59 +208,38 @@ const actualizarEstado = async (idPedido, estado, idUsuario, rol) => {
 };
 
 const crear=async(datos, db = pool)=>{
-
+const columnas = [
+	"id_cliente",
+	"id_usuario",
+	"fecha",
+	"tipo_cliente",
+	"estado",
+	"total",
+	"observaciones",
+	"pagado",
+];
+const valores = [
+	datos.id_cliente,
+	datos.id_usuario,
+	datos.fecha || new Date(),
+	datos.tipo_cliente,
+	"PENDIENTE",
+	datos.total,
+	datos.observaciones || null,
+	false,
+];
+if (datos.id_atencion !== undefined && datos.id_atencion !== null) {
+	columnas.push("id_atencion");
+	valores.push(datos.id_atencion);
+}
+const placeholders = valores.map((_, indice) => `$${indice + 1}`).join(",");
 const resultado = await db.query(
 
-`
-
-INSERT INTO pedido
-
-(
-
-id_cliente,
-
-id_usuario,
-
-fecha,
-
-tipo_cliente,
-
-estado,
-
-total,
-
-observaciones,
-
-pagado
-
-)
-
-VALUES
-
-($1,$2,$3,$4,$5,$6,$7,$8)
-
-RETURNING id_pedido
-`
-
-,[
-
-datos.id_cliente,
-
-datos.id_usuario,
-
-datos.fecha || new Date(),
-
-datos.tipo_cliente,
-
-"PENDIENTE",
-
-datos.total
-
-,datos.observaciones || null
-
-,false
-
-]);
+	`INSERT INTO pedido (${columnas.join(",")})
+	 VALUES (${placeholders})
+	 RETURNING id_pedido`,
+	valores,
+);
 
 return resultado.rows[0].id_pedido;
 

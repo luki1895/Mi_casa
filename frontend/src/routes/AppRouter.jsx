@@ -20,6 +20,11 @@ import Menu from "../pages/Menu/Menu";
 import Productos from "../pages/Productos/Productos";
 import Reservas from "../pages/Reservas/Reservas";
 import Pensiones from "../pages/Pensiones/Pensiones";
+import ReservasPlatos from "../pages/ReservasPlatos/ReservasPlatos";
+import Mesas from "../pages/Mesas/Mesas";
+import EventosPrivados from "../pages/EventosPrivados/EventosPrivados";
+import GestionEventosPrivados from "../pages/EventosPrivados/GestionEventosPrivados";
+import GestionReservasPlatos from "../pages/ReservasPlatos/GestionReservasPlatos";
 
 function AppRouter() {
     return (
@@ -27,6 +32,8 @@ function AppRouter() {
             <Routes>
                 <Route path="/" element={<LandingPage />} />
                 <Route path="/login" element={<Login />} />
+                <Route path="/reservar-platos" element={<ReservasPlatos />} />
+                <Route path="/eventos-privados" element={<EventosPrivados />} />
 
                 <Route
                     path="/cliente"
@@ -59,6 +66,9 @@ function AppRouter() {
                     <Route path="/menu" element={<ProtectedRoute allowedRoles={["admin"]}><Menu /></ProtectedRoute>} />
                     <Route path="/productos" element={<ProtectedRoute allowedRoles={["admin"]}><Productos /></ProtectedRoute>} />
                     <Route path="/reservas" element={<ProtectedRoute allowedRoles={["admin", "caja"]}><Reservas /></ProtectedRoute>} />
+                    <Route path="/reservas-platos/gestion" element={<ProtectedRoute allowedRoles={["admin", "caja"]}><GestionReservasPlatos /></ProtectedRoute>} />
+                    <Route path="/eventos-privados/gestion" element={<ProtectedRoute allowedRoles={["admin", "caja"]}><GestionEventosPrivados /></ProtectedRoute>} />
+                    <Route path="/mesas" element={<ProtectedRoute allowedRoles={["admin", "caja", "mesero"]}><Mesas /></ProtectedRoute>} />
                     <Route path="/pensiones" element={<ProtectedRoute allowedRoles={["admin", "caja", "mesero"]}><Pensiones /></ProtectedRoute>} />
                     <Route path="/pedidos" element={<ProtectedRoute allowedRoles={["admin"]}><Pedidos /></ProtectedRoute>} />
                     <Route path="/caja" element={<ProtectedRoute allowedRoles={["admin", "caja"]}><Caja /></ProtectedRoute>} />

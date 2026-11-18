@@ -99,11 +99,7 @@ export const miPortal = async (req, res) => {
 };
 
 export const crearReserva = async (req, res) => {
-    try {
-        response.ok(res, await clienteService.crearReserva(req.usuario.id, req.body), "Solicitud de reserva enviada");
-    } catch (error) {
-        response.error(res, error.message, error.status || 400);
-    }
+    response.error(res, "Las reservas anticipadas de mesas no están disponibles.", 410);
 };
 
 export const vincularCuenta = async (req, res) => {

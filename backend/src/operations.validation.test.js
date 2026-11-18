@@ -5,6 +5,8 @@ import pensionadoModel from "./models/pensionado.model.js";
 import reservaModel from "./models/reserva.model.js";
 import reporteModel from "./models/reporte.model.js";
 import produccionModel from "./models/produccion.model.js";
+import reservaPlatoModel from "./models/reservaPlato.model.js";
+import eventoPrivadoModel from "./models/eventoPrivado.model.js";
 
 const debeRechazarComo = async (operacion, codigo) => {
     await assert.rejects(operacion, (error) => error.status === codigo);
@@ -35,4 +37,27 @@ test("reservation and report date filters reject impossible calendar dates", asy
 
 test("daily production rejects impossible dates before opening a database transaction", async () => {
     await debeRechazarComo(produccionModel.crear({ fecha: "2025-02-31" }, 1), 400);
+});
+
+test("public dish reservations reject incomplete contact and item data before database access", async () => {
+    await debeRechazarComo(reservaPlatoModel.crear({ nombre: "", celular: "555" }), 400);
+    await debeRechazarComo(reservaPlatoModel.crear({
+        nombre: "Cliente",
+        celular: "555",
+        items: [{ id_producto: 1, cantidad: 0 }],
+    }), 400);
+});
+
+test("private-event requests reject invalid schedules before database access", async () => {
+    await debeRechazarComo(eventoPrivadoModel.crear({
+        nombre_responsable: "Cliente",
+        celular: "555",
+        tipo_evento: "Reunión",
+        fecha: "2026-12-01",
+        hora_inicio: "18:00",
+        hora_fin: "17:00",
+        invitados: 4,
+        decoracion: "NO",
+        detalle: [{ preparacion: "Comida", cantidad_personas: 4 }],
+    }), 400);
 });

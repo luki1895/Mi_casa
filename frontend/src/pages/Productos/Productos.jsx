@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import api from "../../api/axios";
 
-const formularioVacio = { nombre: "", categoria: "SOPA", descripcion: "" };
+const formularioVacio = { nombre: "", categoria: "SOPA", descripcion: "", imagen_url: "" };
 const categorias = ["SOPA", "SEGUNDO", "ENTRADA", "REFRESCO", "EXTRA", "OTRO"];
 
 function Productos() {
@@ -79,6 +79,7 @@ function Productos() {
       nombre: producto.nombre,
       categoria: producto.categoria,
       descripcion: producto.descripcion || "",
+      imagen_url: producto.imagen_url || "",
     });
     setError("");
     setAviso("");
@@ -128,6 +129,10 @@ function Productos() {
           <label className="space-y-1 text-sm font-semibold text-slate-700 md:col-span-2">
             Descripción (opcional)
             <textarea name="descripcion" rows="3" value={formulario.descripcion} onChange={cambiarCampo} className="w-full rounded-lg border border-slate-200 px-3 py-2" />
+          </label>
+          <label className="space-y-1 text-sm font-semibold text-slate-700 md:col-span-2">
+            Fotografía opcional (URL HTTPS o ruta local)
+            <input name="imagen_url" type="text" value={formulario.imagen_url} onChange={cambiarCampo} className="w-full rounded-lg border border-slate-200 px-3 py-2" />
           </label>
         </div>
         <div className="flex flex-wrap justify-end gap-3">

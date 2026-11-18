@@ -142,35 +142,6 @@ const obtenerPortal = async (idUsuario) => {
     return { ...cliente, pedidos: pedidosResult.rows, reservas: reservasResult.rows };
 };
 
-const crearReserva = async (idUsuario, datos) => {
-    const fecha = String(datos.fecha || "");
-    const hora = String(datos.hora || "");
-    const personas = Number(datos.cantidad_personas);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha) || !/^\d{2}:\d{2}$/.test(hora) || !Number.isInteger(personas) || personas < 1) {
-        throw Object.assign(new Error("Indica una hora y una cantidad válida de personas para la reserva"), { status: 400 });
-    }
-    const cliente = await pool.query(
-        `SELECT c.id_cliente FROM usuario u
-         INNER JOIN cliente c ON c.id_cliente=u.id_cliente
-         WHERE u.id_usuario=$1 AND UPPER(c.estado::text) NOT IN ('INACTIVO','FALSE')`,
-        [idUsuario]
-    );
-    if (!cliente.rowCount) {
-        throw Object.assign(new Error("Esta cuenta no está vinculada a un cliente activo"), { status: 404 });
-    }
-    const resultado = await pool.query(
-        `INSERT INTO reserva (id_cliente,fecha,hora,cantidad_personas,observaciones)
-         SELECT $1,$2::date,$3::time,$4,NULLIF(BTRIM($5),'')
-         WHERE $2::date=CURRENT_DATE
-         RETURNING id_reserva,fecha,hora,cantidad_personas,observaciones,estado`,
-        [cliente.rows[0].id_cliente,fecha,hora,personas,String(datos.observaciones || "")]
-    );
-    if (!resultado.rowCount) {
-        throw Object.assign(new Error("Por ahora solo se aceptan solicitudes de reserva para hoy"), { status: 400 });
-    }
-    return resultado.rows[0];
-};
-
 const vincularCuenta = async (idCliente, nombreUsuario) => {
     const resultado = await pool.query(
         `UPDATE usuario
@@ -318,7 +289,6 @@ export default {
 
     listarParaPedidos,
     obtenerPortal,
-    crearReserva,
     vincularCuenta,
     obtener,
 

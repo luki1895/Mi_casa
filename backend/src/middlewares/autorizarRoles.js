@@ -15,7 +15,6 @@ const normalizarRol = (rol = "") => {
         mesero: "mesero",
         mesera: "mesero",
         cliente: "cliente",
-        empleado: "empleado",
     };
     return roles[valor] || valor;
 };

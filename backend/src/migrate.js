@@ -19,6 +19,9 @@ const applicationTables = [
     "apertura_caja",
     "cierre_caja",
     "reserva",
+    "mesa",
+    "atencion_mesa",
+    "reserva_plato",
     "pago",
     "solicitud_adicional",
     "bitacora_operaciones",
@@ -104,7 +107,10 @@ try {
         const client = await pool.connect();
         try {
             await client.query("BEGIN");
-            await client.query(sql);
+            const sqlSinTransaccionExterna = sql
+                .replace(/^\s*BEGIN\s*;/i, "")
+                .replace(/;\s*COMMIT\s*;\s*$/i, ";");
+            await client.query(sqlSinTransaccionExterna);
             await client.query(
                 "INSERT INTO public.schema_migrations (name, checksum) VALUES ($1, $2)",
                 [file, checksum],

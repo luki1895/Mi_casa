@@ -1,6 +1,7 @@
 import {
   MdDashboard,
   MdRestaurantMenu,
+  MdTableRestaurant,
 } from "react-icons/md";
 
 import {
@@ -65,9 +66,27 @@ const menuItems = [
     roles: ["admin", "caja"],
   },
   {
+    title: "Mesas y atenciones",
+    icon: MdTableRestaurant,
+    path: "/mesas",
+    roles: ["admin", "caja", "mesero"],
+  },
+  {
     title: "Reservas",
     icon: FaCalendarAlt,
     path: "/reservas",
+    roles: ["admin", "caja"],
+  },
+  {
+    title: "Reservas de platos",
+    icon: FaCalendarAlt,
+    path: "/reservas-platos/gestion",
+    roles: ["admin", "caja"],
+  },
+  {
+    title: "Eventos privados",
+    icon: FaCalendarAlt,
+    path: "/eventos-privados/gestion",
     roles: ["admin", "caja"],
   },
   {

@@ -40,8 +40,6 @@ function ClientePortal() {
     const [cargando, setCargando] = useState(true);
     const [error, setError] = useState("");
     const [aviso, setAviso] = useState("");
-    const [guardando, setGuardando] = useState(false);
-    const [reserva, setReserva] = useState({ hora: "", cantidad_personas: "2", observaciones: "" });
 
     useEffect(() => {
         let cancelado = false;
@@ -51,7 +49,7 @@ function ClientePortal() {
             if (usuario?.demo) {
                 setCuenta(null);
                 setMenusSemana({});
-                setAviso("Cuenta de demostración: el contenido personal y las reservas requieren una cuenta vinculada a un cliente real.");
+                setAviso("Cuenta de demostración: el contenido personal requiere una cuenta vinculada a un cliente real.");
                 setCargando(false);
                 return;
             }
@@ -84,40 +82,7 @@ function ClientePortal() {
         navigate("/login", { replace: true });
     };
 
-    const solicitarReserva = async (event) => {
-        event.preventDefault();
-        setAviso("");
-        if (!reserva.hora || Number(reserva.cantidad_personas) < 1) {
-            setAviso("Indica la hora y una cantidad válida de personas.");
-            return;
-        }
-        if (usuario?.demo) {
-            setAviso("Las reservas no se guardan desde una cuenta de demostración.");
-            return;
-        }
-        setGuardando(true);
-        try {
-            const { data } = await api.post("/clientes/mis-reservas", {
-                fecha: hoy,
-                hora: reserva.hora,
-                cantidad_personas: Number(reserva.cantidad_personas),
-                observaciones: reserva.observaciones.trim(),
-            });
-            setCuenta((actual) => ({
-                ...actual,
-                reservas: [data.data, ...(actual?.reservas || [])],
-            }));
-            setReserva({ hora: "", cantidad_personas: "2", observaciones: "" });
-            setAviso("Solicitud enviada. La reserva queda pendiente de confirmación del restaurante.");
-        } catch (requestError) {
-            setAviso(requestError.response?.data?.mensaje || "No se pudo enviar la solicitud de reserva.");
-        } finally {
-            setGuardando(false);
-        }
-    };
-
     const menuHoy = menusSemana[hoy] || [];
-    const reservaHoy = (cuenta?.reservas || []).find((item) => String(item.fecha).slice(0, 10) === hoy);
 
     return (
         <div className="min-h-screen bg-[#f8f5f2] text-slate-800">
@@ -157,12 +122,11 @@ function ClientePortal() {
                                 <p className="text-sm capitalize text-slate-300">{presentarFecha(hoy)}</p>
                             </div>
                         </div>
-                        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+                        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                             {[
                                 ["Sopas", cuenta ? cuenta.saldo_sopas ?? "Sin asignar" : "—", "Créditos disponibles"],
                                 ["Segundos", cuenta ? cuenta.saldo_segundos ?? "Sin asignar" : "—", "Créditos disponibles"],
                                 ["Platos disponibles hoy", menuHoy.length, "Opciones publicadas"],
-                                ["Reserva de hoy", reservaHoy ? estadoBonito(reservaHoy.estado) : "Sin reserva", reservaHoy ? `${String(reservaHoy.hora).slice(0, 5)} · ${reservaHoy.cantidad_personas} personas` : "Puedes solicitar una reserva"],
                                 ["Pedidos recientes", (cuenta?.pedidos || []).length, "Pedidos asociados a tu cuenta"],
                             ].map(([titulo, valor, detalle]) => (
                                 <article key={titulo} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -174,7 +138,7 @@ function ClientePortal() {
                         </div>
                         <nav aria-label="Accesos del cliente" className="flex flex-wrap gap-2">
                             <a href="#cliente-menu-hoy" className="rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-bold text-slate-950 hover:bg-amber-400">Ver menú de hoy</a>
-                            <a href="#cliente-reservas" className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50">Realizar reserva</a>
+                            <a href="#cliente-reservas" className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50">Ver reservas anteriores</a>
                             <a href="#cliente-menu-semanal" className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50">Menú semanal</a>
                             <a href="#cliente-pedidos" className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50">Mis pedidos</a>
                         </nav>
@@ -222,47 +186,22 @@ function ClientePortal() {
                             </div>
                         </section>
 
-                        <section id="cliente-reservas" className="scroll-mt-6 grid gap-6 lg:grid-cols-2">
-                            <article className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
-                                <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Hoy · {presentarFecha(hoy)}</p>
-                                <h2 className="mt-1 text-2xl font-black">Solicitar una reserva</h2>
-                                <p className="mt-2 text-sm text-slate-600">Tu solicitud queda pendiente hasta que el restaurante la confirme.</p>
-                                <form onSubmit={solicitarReserva} className="mt-5 space-y-4">
-                                    <label className="block text-sm font-semibold">Fecha
-                                        <input type="date" value={hoy} min={hoy} max={hoy} readOnly className="mt-1 w-full rounded-lg border bg-slate-50 p-3" />
-                                    </label>
-                                    <div className="grid gap-4 sm:grid-cols-2">
-                                        <label className="block text-sm font-semibold">Hora
-                                            <input required type="time" value={reserva.hora} onChange={(event) => setReserva({ ...reserva, hora: event.target.value })} className="mt-1 w-full rounded-lg border p-3" />
-                                        </label>
-                                        <label className="block text-sm font-semibold">Personas
-                                            <input required type="number" min="1" step="1" value={reserva.cantidad_personas} onChange={(event) => setReserva({ ...reserva, cantidad_personas: event.target.value })} className="mt-1 w-full rounded-lg border p-3" />
-                                        </label>
-                                    </div>
-                                    <label className="block text-sm font-semibold">Observación opcional
-                                        <textarea rows="2" value={reserva.observaciones} onChange={(event) => setReserva({ ...reserva, observaciones: event.target.value })} className="mt-1 w-full rounded-lg border p-3" />
-                                    </label>
-                                    <button disabled={guardando || usuario?.demo || !cuenta} className="w-full rounded-xl bg-amber-500 px-4 py-3 font-bold text-slate-950 disabled:opacity-50">
-                                        {guardando ? "Enviando solicitud…" : "Solicitar reserva"}
-                                    </button>
-                                </form>
-                            </article>
-
-                            <article className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
-                                <h2 className="text-2xl font-black">Mis reservas</h2>
-                                <div className="mt-4 space-y-3">
-                                    {(cuenta?.reservas || []).map((item) => (
-                                        <div key={item.id_reserva} className="flex justify-between gap-3 rounded-xl bg-slate-50 p-4">
-                                            <div>
-                                                <p className="font-semibold capitalize">{presentarFecha(String(item.fecha).slice(0, 10))} · {String(item.hora).slice(0, 5)}</p>
-                                                <p className="text-sm text-slate-600">{item.cantidad_personas} personas{item.observaciones ? ` · ${item.observaciones}` : ""}</p>
-                                            </div>
-                                            <span className="h-fit rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-800">{item.estado}</span>
+                        <section id="cliente-reservas" className="scroll-mt-6 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
+                            <h2 className="text-2xl font-black">Reservas registradas</h2>
+                            <p className="mt-2 text-sm text-slate-600">Se conservan aquí los registros anteriores. Este portal no acepta nuevas reservas de mesas.</p>
+                            <p className="mt-2 text-sm text-slate-600">Puedes <a href="/reservar-platos" className="font-semibold text-amber-700 underline">reservar platos</a> o <a href="/eventos-privados" className="font-semibold text-amber-700 underline">consultar eventos privados</a>.</p>
+                            <div className="mt-4 space-y-3">
+                                {(cuenta?.reservas || []).map((item) => (
+                                    <div key={item.id_reserva} className="flex justify-between gap-3 rounded-xl bg-slate-50 p-4">
+                                        <div>
+                                            <p className="font-semibold capitalize">{presentarFecha(String(item.fecha).slice(0, 10))} · {String(item.hora).slice(0, 5)}</p>
+                                            <p className="text-sm text-slate-600">{item.cantidad_personas} personas{item.observaciones ? ` · ${item.observaciones}` : ""}</p>
                                         </div>
-                                    ))}
-                                    {!(cuenta?.reservas || []).length && <p className="py-4 text-sm text-slate-500">Aún no tienes reservas.</p>}
-                                </div>
-                            </article>
+                                        <span className="h-fit rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-800">{item.estado}</span>
+                                    </div>
+                                ))}
+                                {!(cuenta?.reservas || []).length && <p className="py-4 text-sm text-slate-500">No hay registros anteriores.</p>}
+                            </div>
                         </section>
 
                         <section id="cliente-pedidos" className="scroll-mt-6 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">

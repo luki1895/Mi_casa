@@ -8,7 +8,6 @@ const roleAliases = new Map([
     ["mesero", "mesero"],
     ["mesera", "mesero"],
     ["cliente", "cliente"],
-    ["empleado", "empleado"],
 ]);
 
 export function normalizeRole(value) {

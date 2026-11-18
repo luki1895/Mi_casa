@@ -36,7 +36,7 @@ function Login() {
 
             const usuario = data.usuario;
             const role = normalizeRole(usuario.rol);
-            if (!["admin", "caja", "mesero", "cocinero", "cliente", "empleado"].includes(role)) {
+            if (!["admin", "caja", "mesero", "cliente"].includes(role)) {
                 throw new Error("El rol de esta cuenta no está reconocido.");
             }
 

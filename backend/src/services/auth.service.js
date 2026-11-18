@@ -1,12 +1,20 @@
 ﻿import jwt from "jsonwebtoken";
 import bcrypt from "bcrypt";
 import authModel from "../models/auth.model.js";
+import { normalizarRol } from "../middlewares/autorizarRoles.js";
+
+const rolesPermitidos = new Set(["admin", "caja", "mesero", "cliente"]);
 
 const login = async (datos) => {
     const usuario = await authModel.buscarUsuario(datos.usuario);
 
     if (!usuario) {
         throw Object.assign(new Error("Usuario o contraseña incorrectos"), { status: 401 });
+    }
+
+    const rolNormalizado = normalizarRol(usuario.rol);
+    if (!rolesPermitidos.has(rolNormalizado)) {
+        throw Object.assign(new Error("El rol de esta cuenta no está reconocido"), { status: 403 });
     }
 
     if (usuario.estado === false || String(usuario.estado).toUpperCase() === "INACTIVO") {

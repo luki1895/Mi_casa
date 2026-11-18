@@ -6,8 +6,6 @@ const listarParaPedidos = () => clienteModel.listarParaPedidos();
 
 const obtenerPortal = (idUsuario) => clienteModel.obtenerPortal(idUsuario);
 
-const crearReserva = (idUsuario, datos) => clienteModel.crearReserva(idUsuario, datos);
-
 const vincularCuenta = (idCliente, usuario) => clienteModel.vincularCuenta(idCliente, usuario);
 
 const obtener = (id) => clienteModel.obtener(id);
@@ -24,7 +22,6 @@ export default {
 
     listarParaPedidos,
     obtenerPortal,
-    crearReserva,
     vincularCuenta,
 
     obtener,

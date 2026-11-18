@@ -1,6 +1,6 @@
-const ok = (res, data, mensaje = "Operación realizada correctamente") => {
+const ok = (res, data, mensaje = "Operación realizada correctamente", status = 200) => {
 
-    return res.status(200).json({
+    return res.status(status).json({
 
         ok: true,
 

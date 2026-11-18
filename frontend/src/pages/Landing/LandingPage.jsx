@@ -1,10 +1,17 @@
-import { Link, useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import api from "../../api/axios";
 
-const stats = [
-  { label: "Especialidades", value: "18+" },
-  { label: "Clientes felices", value: "1.2k" },
-  { label: "Servicio", value: "24/7" },
-];
+const fechaLaPaz = () => {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/La_Paz",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
+  return `${values.year}-${values.month}-${values.day}`;
+};
 
 const services = [
   "Cocina casera y artesanal",
@@ -12,21 +19,15 @@ const services = [
   "Ambiente familiar y elegante",
 ];
 
-const dishes = [
-  { name: "Lomo a la parrilla", description: "Con papas rústicas y salsa de hierbas.", price: "Bs 78" },
-  { name: "Ceviche Mi Casa", description: "Mariscos frescos con limón, ají y tradición.", price: "Bs 65" },
-  { name: "Risotto de hongos", description: "Textura cremosa y sabor intenso.", price: "Bs 72" },
-  { name: "Pasta al pesto", description: "Frescura de la cocina con un toque moderno.", price: "Bs 60" },
-];
-
-const reviews = [
-  { name: "Andrea M.", text: "Excelente atención, ambiente encantador y una comida con sabor auténtico." },
-  { name: "Carlos T.", text: "La mejor experiencia para reunirme con mi familia. Todo muy bien cuidado." },
-  { name: "Nora L.", text: "La calidad del servicio y la cocina superan las expectativas cada vez." },
-];
-
 function LandingPage() {
-  const navigate = useNavigate();
+  const [menu, setMenu] = useState([]);
+  const [menuError, setMenuError] = useState("");
+
+  useEffect(() => {
+    api.get("/menu", { params: { fecha: fechaLaPaz() } })
+      .then(({ data }) => setMenu(data.data || []))
+      .catch((error) => setMenuError(error.response?.data?.mensaje || "No se pudo cargar el menú."));
+  }, []);
 
   return (
     <div className="min-h-screen bg-[#f7f3ee] text-[#1f1a17]">
@@ -43,10 +44,10 @@ function LandingPage() {
           </div>
 
           <Link
-            to="/login"
+            to="/reservar-platos"
             className="rounded-full border border-[#d9bda7] bg-white/80 px-5 py-2.5 text-sm font-semibold text-[#403330] shadow-sm hover:bg-[#fffaf5]"
           >
-            Iniciar sesión
+            Reservar platos
           </Link>
         </nav>
 
@@ -63,14 +64,14 @@ function LandingPage() {
             </p>
 
             <div className="mt-8 flex flex-wrap gap-4">
-              <button
-                onClick={() => navigate("/login")}
+              <Link
+                to="/reservar-platos"
                 className="rounded-full bg-[#b85c3b] px-7 py-3.5 text-sm font-semibold text-white shadow-[0_16px_30px_rgba(184,92,59,0.25)] hover:bg-[#8f422d]"
               >
-                Reservar ahora
-              </button>
+                Reservar platos
+              </Link>
               <Link
-                to="/login"
+                to="#menu"
                 className="rounded-full border border-[#d9bda7] bg-white px-7 py-3.5 text-sm font-semibold text-[#2f261f] hover:bg-[#fffaf5]"
               >
                 Ver menú
@@ -93,15 +94,6 @@ function LandingPage() {
       </header>
 
       <main className="mx-auto max-w-6xl px-5 py-16 lg:px-8">
-        <section className="grid gap-6 md:grid-cols-3">
-          {stats.map((item) => (
-            <div key={item.label} className="soft-card flex flex-col justify-between p-7">
-              <p className="text-4xl font-black text-[#1f1a17]">{item.value}</p>
-              <p className="mt-2 text-xs font-semibold uppercase tracking-[0.24em] text-[#7d5b50]">{item.label}</p>
-            </div>
-          ))}
-        </section>
-
         <section className="mt-20 grid gap-8 lg:grid-cols-[0.95fr_1.05fr] lg:items-center">
           <div>
             <p className="text-sm font-semibold uppercase tracking-[0.28em] text-[#b85c3b]">Nuestro compromiso</p>
@@ -127,25 +119,25 @@ function LandingPage() {
           </div>
         </section>
 
-        <section className="mt-20">
+        <section id="menu" className="mt-20 scroll-mt-8">
           <div className="mb-8 text-center">
             <p className="text-sm font-semibold uppercase tracking-[0.28em] text-[#b85c3b]">Nuestra carta</p>
             <h2 className="mt-3 text-3xl font-black text-[#1f1a17] md:text-4xl">Platos que marcan la diferencia</h2>
           </div>
 
           <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
-            {dishes.map((dish) => (
-              <article key={dish.name} className="soft-card p-5">
-                <div className="mb-5 flex h-40 items-center justify-center rounded-[22px] bg-gradient-to-br from-[#f9dfb1] via-[#f7e8d0] to-[#f9f2ea] text-5xl shadow-inner">
-                  🍽️
-                </div>
-                <h3 className="text-xl font-bold text-[#1f1a17]">{dish.name}</h3>
-                <p className="mt-2 text-sm leading-6 text-[#5f4d48]">{dish.description}</p>
+            {menuError && <p role="alert" className="md:col-span-2 rounded-xl bg-rose-50 p-4 text-sm text-rose-800">{menuError}</p>}
+            {!menuError && menu.length === 0 && <p className="md:col-span-2 rounded-xl bg-white p-4 text-center text-sm text-[#5f4d48]">No hay platos disponibles en el menú de hoy.</p>}
+            {menu.map((dish) => (
+              <article key={dish.id_producto} className="soft-card p-5">
+                {dish.imagen_url
+                  ? <img src={dish.imagen_url} alt={dish.nombre} className="mb-5 h-40 w-full rounded-[22px] object-cover" />
+                  : <div aria-hidden="true" className="mb-5 flex h-40 items-center justify-center rounded-[22px] bg-gradient-to-br from-[#f9dfb1] via-[#f7e8d0] to-[#f9f2ea] text-5xl shadow-inner">🍽️</div>}
+                <h3 className="text-xl font-bold text-[#1f1a17]">{dish.nombre}</h3>
+                <p className="mt-2 text-sm leading-6 text-[#5f4d48]">{dish.categoria}</p>
                 <div className="mt-5 flex items-center justify-between">
-                  <span className="text-lg font-black text-[#b85c3b]">{dish.price}</span>
-                  <button className="rounded-full bg-[#1f1a17] px-3 py-2 text-xs font-semibold text-white hover:bg-[#342d29]">
-                    Agregar
-                  </button>
+                  <span className="text-lg font-black text-[#b85c3b]">Bs {dish.precio}</span>
+                  <Link to="/reservar-platos" className="rounded-full bg-[#1f1a17] px-3 py-2 text-xs font-semibold text-white hover:bg-[#342d29]">Reservar</Link>
                 </div>
               </article>
             ))}
@@ -156,55 +148,32 @@ function LandingPage() {
           <div className="grid gap-8 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
             <div>
               <p className="text-sm font-semibold uppercase tracking-[0.28em] text-[#f4d7ac]">Reservas</p>
-              <h2 className="mt-3 text-3xl font-black md:text-4xl">Asegura tu mesa para momentos inolvidables.</h2>
+              <h2 className="mt-3 text-3xl font-black md:text-4xl">Elige tus platos con anticipación.</h2>
               <p className="mt-4 max-w-lg text-[#d4c3bd]">
-                Diseño de cenas, reuniones familiares y encuentros especiales con un servicio atento y una experiencia gastronómica impecable.
+                Consulta el menú disponible y envía tu solicitud de reserva sin crear una cuenta. La disponibilidad se confirma al registrar la solicitud.
               </p>
             </div>
 
             <div className="rounded-[28px] border border-white/10 bg-white/5 p-6 backdrop-blur-sm">
               <div className="grid gap-4 md:grid-cols-2">
-                <div className="rounded-[20px] bg-white/5 p-4">
-                  <p className="text-sm text-[#dcc5bb]">Fecha</p>
-                  <p className="mt-2 text-xl font-bold">Viernes · 18:30</p>
-                </div>
-                <div className="rounded-[20px] bg-white/5 p-4">
-                  <p className="text-sm text-[#dcc5bb]">Mesa</p>
-                  <p className="mt-2 text-xl font-bold">2 personas</p>
-                </div>
                 <div className="rounded-[20px] bg-white/5 p-4 md:col-span-2">
-                  <p className="text-sm text-[#dcc5bb]">Especial</p>
-                  <p className="mt-2 text-xl font-bold">Cena romántica con vino</p>
+                  <p className="text-sm text-[#dcc5bb]">Sin registro de cuenta</p>
+                  <p className="mt-2 text-xl font-bold">Recibe un enlace privado para administrar tu solicitud.</p>
                 </div>
               </div>
-              <button
-                onClick={() => navigate("/login")}
+              <Link
+                to="/reservar-platos"
                 className="mt-6 w-full rounded-full bg-[#f4d7ac] px-5 py-3.5 text-sm font-bold text-[#1f1a17] hover:bg-[#e7c98a]"
               >
-                Reservar ahora
-              </button>
+                Reservar platos
+              </Link>
+              <Link to="/eventos-privados" className="mt-3 block text-center text-sm font-semibold text-[#f4d7ac] underline">
+                Consultar por eventos privados
+              </Link>
             </div>
           </div>
         </section>
 
-        <section className="mt-20">
-          <div className="mb-8 text-center">
-            <p className="text-sm font-semibold uppercase tracking-[0.28em] text-[#b85c3b]">Testimonios</p>
-            <h2 className="mt-3 text-3xl font-black text-[#1f1a17] md:text-4xl">Lo que dicen nuestros clientes</h2>
-          </div>
-
-          <div className="grid gap-6 md:grid-cols-3">
-            {reviews.map((item) => (
-              <div key={item.name} className="soft-card p-6">
-                <div className="mb-4 text-lg text-[#d59f52]">★★★★★</div>
-                <p className="text-base leading-7 text-[#4b3d38]">“{item.text}”</p>
-                <div className="mt-5 border-t border-[#eaded2] pt-4">
-                  <p className="font-bold text-[#1f1a17]">{item.name}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
       </main>
     </div>
   );

@@ -13,6 +13,10 @@ import cajaRoutes from "./routes/caja.routes.js";
 import gastoRoutes from "./routes/gasto.routes.js";
 import reporteRoutes from "./routes/reporte.routes.js";
 import productoRoutes from "./routes/producto.routes.js";
+import menuRoutes from "./routes/menu.routes.js";
+import reservaPlatoRoutes from "./routes/reservaPlato.routes.js";
+import atencionMesaRoutes from "./routes/atencionMesa.routes.js";
+import eventoPrivadoRoutes from "./routes/eventoPrivado.routes.js";
 
 
 
@@ -32,6 +36,10 @@ app.use("/api/productos", productoRoutes);
 app.use("/api/caja", cajaRoutes);
 app.use("/api/gastos", gastoRoutes);
 app.use("/api/reportes", reporteRoutes);
+app.use("/api/menu", menuRoutes);
+app.use("/api/reservas-platos", reservaPlatoRoutes);
+app.use("/api/atenciones-mesa", atencionMesaRoutes);
+app.use("/api/eventos-privados", eventoPrivadoRoutes);
 
 app.get("/", (req, res) => {
     res.json({

@@ -174,8 +174,9 @@ const actualizar = async (id, datos = {}) => {
         if (estadoNormalizado === true && !rolNormalizado) {
             const existente = await pool.query("SELECT rol, estado FROM usuario WHERE id_usuario=$1", [id]);
             if (!existente.rows[0]) throw Object.assign(new Error("Usuario no encontrado"), { status: 404 });
-            if (existente.rows[0].rol === "empleado" && !existente.rows[0].estado) {
-                throw Object.assign(new Error("Asigna un rol vigente antes de reactivar esta cuenta"), { status: 400 });
+                const rolExistente = normalizarRol(existente.rows[0].rol);
+                if (!rolesPermitidos.has(rolExistente)) {
+                    throw Object.assign(new Error("Asigna un rol vigente antes de reactivar esta cuenta"), { status: 400 });
             }
         }
         params.push(estadoNormalizado);

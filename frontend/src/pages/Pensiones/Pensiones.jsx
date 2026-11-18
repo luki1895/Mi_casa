@@ -15,21 +15,6 @@ function Pensiones() {
   const [error, setError] = useState("");
   const [aviso, setAviso] = useState("");
 
-  const cargarClientes = useCallback(async () => {
-    setCargando(true);
-    setError("");
-    try {
-      const { data } = await api.get("/clientes/para-pedidos");
-      const pensionados = (data.data || []).filter((cliente) => cliente.tipo_cliente === "PENSIONADO");
-      setClientes(pensionados);
-      if (pensionados.length) setClienteId((actual) => actual || String(pensionados[0].id_cliente));
-    } catch (requestError) {
-      setError(requestError.response?.data?.mensaje || "No se pudo cargar la lista de pensionados.");
-    } finally {
-      setCargando(false);
-    }
-  }, []);
-
   const cargarDetalle = useCallback(async () => {
     if (!clienteId) {
       setDetalle(null);

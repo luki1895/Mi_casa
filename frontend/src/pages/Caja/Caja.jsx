@@ -17,6 +17,8 @@ function Caja() {
     const [seccionActiva, setSeccionActiva] = useState("RESUMEN");
     const [panel, setPanel] = useState({ ventas: 0, gastos: 0, saldo_esperado: 0, pedidos_pendientes: 0, cierre: null, apertura: null, estado_caja: "SIN_ABRIR" });
     const [pedidos, setPedidos] = useState([]);
+    const [atenciones, setAtenciones] = useState([]);
+    const [atencionId, setAtencionId] = useState("");
     const [clientes, setClientes] = useState([]);
     const [menu, setMenu] = useState([]);
     const [gastos, setGastos] = useState([]);
@@ -52,6 +54,7 @@ function Caja() {
         if (usuario?.demo) {
             setPanel({ ventas: 0, gastos: 0, saldo_esperado: 0, pedidos_pendientes: 0, cierre: null, apertura: null, estado_caja: "SIN_ABRIR" });
             setPedidos([]);
+            setAtenciones([]);
             setClientes([]);
             setMenu([]);
             setGastos([]);
@@ -75,6 +78,14 @@ function Caja() {
             setGastos(gastosRes.data.data || []);
             setPagos(pagosRes.data.data || []);
             setAdicionales(adicionalesRes.data.data || []);
+            try {
+                const atencionesRes = await api.get("/atenciones-mesa");
+                setAtenciones(atencionesRes.data.data || []);
+            } catch (requestError) {
+                if (requestError.response?.status !== 503) throw requestError;
+                setAtenciones([]);
+                setAviso("La asociación de pedidos a mesas estará disponible después de aplicar la migración local preparada.");
+            }
         } catch (requestError) {
             setError(requestError.response?.data?.mensaje || "No se pudo cargar Caja. Comprueba la conexión y que se haya aplicado la migración PostgreSQL 001.");
         } finally {
@@ -137,10 +148,11 @@ function Caja() {
                 id_cliente: tipoCliente === "PENSIONADO" ? Number(clienteId) : undefined,
                 cliente_nombre: tipoCliente === "EVENTUAL" ? nombreEventual.trim() : undefined,
                 cliente_telefono: tipoCliente === "EVENTUAL" ? telefonoEventual.trim() : undefined,
+                id_atencion: atencionId ? Number(atencionId) : undefined,
                 observaciones: observaciones.trim(),
                 detalle: carrito.map(({ id_producto, cantidad }) => ({ id_producto, cantidad })),
             });
-            setCarrito([]); setClienteId(""); setNombreEventual(""); setTelefonoEventual(""); setObservaciones("");
+            setCarrito([]); setClienteId(""); setNombreEventual(""); setTelefonoEventual(""); setObservaciones(""); setAtencionId("");
             setAviso(`Pedido #${respuesta.data.data.id_pedido} registrado. Confirma el pago para emitir su comanda.`);
             await cargar();
         } catch (requestError) {
@@ -425,6 +437,12 @@ function Caja() {
                     <form onSubmit={crearPedido} className="mt-4 space-y-4">
                         <div className="flex gap-5 text-sm font-semibold"><label className="flex items-center gap-2"><input type="radio" checked={tipoCliente === 'PENSIONADO'} onChange={() => { setTipoCliente('PENSIONADO'); setClienteId(''); }} />Pensionado</label><label className="flex items-center gap-2"><input type="radio" checked={tipoCliente === 'EVENTUAL'} onChange={() => { setTipoCliente('EVENTUAL'); setClienteId(''); }} />Eventual</label></div>
                         {tipoCliente === 'PENSIONADO' ? <select required value={clienteId} onChange={(event) => setClienteId(event.target.value)} className="w-full rounded-xl border border-slate-200 px-3 py-3"><option value="">Selecciona el pensionado</option>{clientes.filter((cliente) => String(cliente.tipo_cliente || '').toUpperCase().includes('PENSION')).map((cliente) => <option key={cliente.id_cliente} value={cliente.id_cliente}>{cliente.nombre}</option>)}</select> : <div className="grid gap-3 sm:grid-cols-2"><input required value={nombreEventual} onChange={(event) => setNombreEventual(event.target.value)} placeholder="Nombre del cliente eventual" className="rounded-xl border border-slate-200 px-3 py-3" /><input value={telefonoEventual} onChange={(event) => setTelefonoEventual(event.target.value)} placeholder="Teléfono (opcional)" className="rounded-xl border border-slate-200 px-3 py-3" /></div>}
+                        <label className="block text-sm font-semibold">Atención de mesa (opcional)
+                            <select value={atencionId} onChange={(event) => setAtencionId(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-3">
+                                <option value="">Sin mesa / pedido para llevar</option>
+                                {atenciones.map((atencion) => <option key={atencion.id_atencion} value={atencion.id_atencion}>Mesa {atencion.mesa} · atención #{atencion.id_atencion}</option>)}
+                            </select>
+                        </label>
                         <div><p className="mb-2 text-sm font-bold">Menú disponible hoy</p><div className="max-h-64 space-y-2 overflow-y-auto">{menu.length ? menu.map((plato) => <div key={`${plato.id_producto}-${plato.categoria}`} className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 p-3"><div><p className="font-semibold">{plato.nombre} <span className="text-xs font-normal text-slate-500">· {plato.categoria}</span></p><p className="text-xs text-slate-500">{importe(plato.precio)} · {plato.stock} disponibles</p></div><button type="button" disabled={!Number(plato.stock)} onClick={() => agregar(plato)} className="rounded-lg bg-slate-900 px-3 py-2 text-xs font-bold text-white disabled:bg-slate-300">Agregar</button></div>) : <p className="rounded-lg bg-slate-50 p-4 text-sm text-slate-500">Sin platos publicados para hoy.</p>}</div></div>
                         {carrito.length > 0 && <ul className="space-y-2">{carrito.map((item) => <li key={item.id_producto} className="flex items-center justify-between rounded-lg border border-slate-100 p-3 text-sm"><span>{item.nombre} × {item.cantidad}</span><span className="flex items-center gap-2"><b>{importe(item.precio * item.cantidad)}</b><button type="button" onClick={() => cambiarCantidad(item.id_producto, -1)} className="px-2 text-lg">−</button><button type="button" onClick={() => cambiarCantidad(item.id_producto, 1)} disabled={item.cantidad >= Number(item.stock)} className="px-2 text-lg disabled:opacity-30">+</button></span></li>)}</ul>}
                         <textarea value={observaciones} onChange={(event) => setObservaciones(event.target.value)} placeholder="Observaciones para cocina" rows="2" className="w-full rounded-xl border border-slate-200 px-3 py-3" />

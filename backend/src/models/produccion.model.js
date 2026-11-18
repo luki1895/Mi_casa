@@ -8,6 +8,27 @@ const listarProductos = async () => {
 };
 
 const listarMenu = async (fecha, db = pool, incluirAgotados = false) => {
+	const { rows: [capacidades] } = await db.query(
+		`SELECT
+		    EXISTS (SELECT 1 FROM information_schema.columns
+		            WHERE table_schema='public' AND table_name='producto' AND column_name='imagen_url') AS tiene_imagen,
+		    to_regclass('public.reserva_plato') IS NOT NULL
+		        AND to_regclass('public.detalle_reserva_plato') IS NOT NULL AS tiene_reservas_platos`
+	);
+	const reservaCte = capacidades.tiene_reservas_platos
+		? `reservas AS (
+			SELECT dr.id_producto, SUM(dr.cantidad) AS cantidad
+			FROM detalle_reserva_plato dr
+			INNER JOIN reserva_plato rp ON rp.id_reserva = dr.id_reserva
+			WHERE rp.fecha = $1::date
+			  AND rp.estado = 'PENDIENTE'
+			  AND rp.id_pedido IS NULL
+			  AND rp.codigo_revocado_en IS NULL
+			  AND (rp.codigo_expira_en IS NULL OR rp.codigo_expira_en > NOW())
+			GROUP BY dr.id_producto
+		)`
+		: "reservas AS (SELECT NULL::bigint AS id_producto, NULL::numeric AS cantidad WHERE FALSE)";
+	const imagenSelect = capacidades.tiene_imagen ? "p.imagen_url" : "NULL::text AS imagen_url";
 	const { rows } = await db.query(
 		`
 		WITH menu AS (
@@ -36,35 +57,43 @@ const listarMenu = async (fecha, db = pool, incluirAgotados = false) => {
 			       COALESCE(pd.precio_extra, c.precio_plato_extra)
 			FROM produccion_diaria pd CROSS JOIN configuracion c
 			WHERE pd.fecha = $1 AND pd.id_plato_extra IS NOT NULL
-		)
-		SELECT m.id_producto, p.nombre, m.categoria, m.precio,
+		),
+		pedidos AS (
+			SELECT dp.id_producto,
+			       SUM(dp.cantidad) FILTER (WHERE pe.pagado IS TRUE) AS vendidos,
+			       SUM(dp.cantidad) FILTER (
+			           WHERE pe.id_pedido IS NOT NULL
+			             AND UPPER(pe.estado) NOT IN ('CANCELADO', 'CANCELADA')
+			       ) AS comprometidos
+			FROM detalle_pedido dp
+			INNER JOIN pedido pe ON pe.id_pedido = dp.id_pedido
+			WHERE pe.fecha::date = $1::date
+			  AND UPPER(pe.estado) NOT IN ('CANCELADO', 'CANCELADA')
+			GROUP BY dp.id_producto
+		),
+		adicionales AS (
+			SELECT (item->>'id_producto')::integer AS id_producto,
+			       SUM((item->>'cantidad')::integer) AS cantidad
+			FROM solicitud_adicional sa
+			CROSS JOIN LATERAL jsonb_array_elements(sa.detalle) item
+			WHERE sa.estado = 'PENDIENTE' AND sa.fecha::date = $1::date
+			GROUP BY (item->>'id_producto')::integer
+		),
+		${reservaCte}
+		SELECT m.id_producto, p.nombre, p.descripcion, ${imagenSelect}, m.categoria, m.precio,
 		       m.producido AS preparados,
-		       COALESCE(SUM(dp.cantidad) FILTER (WHERE pe.pagado IS TRUE), 0) AS vendidos,
-		       COALESCE(SUM(dp.cantidad) FILTER (WHERE pe.id_pedido IS NOT NULL AND pe.pagado IS FALSE), 0)
-		       + COALESCE((
-		           SELECT SUM((item->>'cantidad')::integer)
-		           FROM solicitud_adicional sa
-		           CROSS JOIN LATERAL jsonb_array_elements(sa.detalle) item
-		           WHERE sa.estado='PENDIENTE' AND sa.fecha::date=$1::date
-		             AND (item->>'id_producto')::integer=m.id_producto
-		       ),0) AS reservados,
-		       GREATEST(m.producido - COALESCE(SUM(
-		           CASE WHEN pe.id_pedido IS NOT NULL THEN dp.cantidad ELSE 0 END
-		       ), 0) - COALESCE((
-		           SELECT SUM((item->>'cantidad')::integer)
-		           FROM solicitud_adicional sa
-		           CROSS JOIN LATERAL jsonb_array_elements(sa.detalle) item
-		           WHERE sa.estado='PENDIENTE' AND sa.fecha::date=$1::date
-		             AND (item->>'id_producto')::integer=m.id_producto
-		       ),0), 0) AS stock
+		       COALESCE(pd.vendidos, 0) AS vendidos,
+		       COALESCE(ad.cantidad, 0) + COALESCE(rp.cantidad, 0) AS reservados,
+		       COALESCE(pd.comprometidos, 0) + COALESCE(ad.cantidad, 0)
+		           + COALESCE(rp.cantidad, 0) AS comprometidos,
+		       GREATEST(m.producido - COALESCE(pd.comprometidos, 0)
+		           - COALESCE(ad.cantidad, 0) - COALESCE(rp.cantidad, 0), 0) AS stock
 		FROM menu m
 		INNER JOIN producto p ON p.id_producto = m.id_producto AND p.activo IS TRUE
-		LEFT JOIN detalle_pedido dp ON dp.id_producto = m.id_producto
-		LEFT JOIN pedido pe ON pe.id_pedido = dp.id_pedido
-		                    AND pe.fecha::date = $1::date
-		                    AND UPPER(pe.estado) NOT LIKE 'CANCEL%'
-		GROUP BY m.id_producto, p.nombre, m.categoria, m.precio, m.producido
-		${incluirAgotados ? "" : "HAVING GREATEST(m.producido - COALESCE(SUM(CASE WHEN pe.id_pedido IS NOT NULL THEN dp.cantidad ELSE 0 END), 0) - COALESCE((SELECT SUM((item->>'cantidad')::integer) FROM solicitud_adicional sa CROSS JOIN LATERAL jsonb_array_elements(sa.detalle) item WHERE sa.estado='PENDIENTE' AND sa.fecha::date=$1::date AND (item->>'id_producto')::integer=m.id_producto),0), 0) > 0"}
+		LEFT JOIN pedidos pd ON pd.id_producto = m.id_producto
+		LEFT JOIN adicionales ad ON ad.id_producto = m.id_producto
+		LEFT JOIN reservas rp ON rp.id_producto = m.id_producto
+		${incluirAgotados ? "" : "WHERE GREATEST(m.producido - COALESCE(pd.comprometidos, 0) - COALESCE(ad.cantidad, 0) - COALESCE(rp.cantidad, 0), 0) > 0"}
 		ORDER BY m.categoria, p.nombre
 		`,
 		[fecha]

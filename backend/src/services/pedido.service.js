@@ -51,6 +51,19 @@ const crear=async(datos, idUsuario, rol)=>{
 			await operacionesModel.verificarCajaAbierta(client);
 		}
 		await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`menu:${fecha}`]);
+		if (datos.id_atencion !== undefined && datos.id_atencion !== null) {
+			const schema = await client.query("SELECT to_regclass('public.atencion_mesa') IS NOT NULL AS disponible");
+			if (!schema.rows[0].disponible) {
+				throw Object.assign(new Error("La gestión de atenciones requiere aplicar la migración local preparada"), { status: 503 });
+			}
+			const atencion = await client.query(
+				"SELECT id_atencion,estado FROM atencion_mesa WHERE id_atencion=$1 FOR UPDATE",
+				[datos.id_atencion],
+			);
+			if (!atencion.rowCount || atencion.rows[0].estado !== "ABIERTA") {
+				throw Object.assign(new Error("La atención seleccionada no existe o ya está cerrada"), { status: 409 });
+			}
+		}
 		let idCliente = datos.id_cliente;
 		if (!idCliente && eventual) {
 			const nuevoCliente = await clienteModel.crear({
@@ -88,6 +101,7 @@ const crear=async(datos, idUsuario, rol)=>{
 			id_usuario: idUsuario,
 			total,
 			observaciones: datos.observaciones,
+			id_atencion: datos.id_atencion,
 		}, client);
 		await detalleModel.crear(idPedido, detalle, client);
 		await client.query(

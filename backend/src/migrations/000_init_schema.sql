@@ -1,5 +1,3 @@
-BEGIN;
-
 CREATE TABLE IF NOT EXISTS persona (
     id_persona BIGSERIAL PRIMARY KEY,
     nombre VARCHAR(150) NOT NULL,
@@ -33,7 +31,7 @@ CREATE TABLE IF NOT EXISTS usuario (
     usuario VARCHAR(80) NOT NULL UNIQUE,
     password TEXT NOT NULL,
     rol VARCHAR(40) NOT NULL
-        CHECK (rol IN ('admin', 'empleado', 'mesero', 'caja', 'cliente')),
+        CHECK (rol IN ('admin', 'mesero', 'caja', 'cliente')),
     estado BOOLEAN NOT NULL DEFAULT TRUE,
     creado_en TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -244,7 +242,7 @@ ON CONFLICT (nombre) DO NOTHING;
 INSERT INTO persona (id_persona, nombre, apellido_paterno, apellido_materno, ci, telefono, email, direccion)
 VALUES
     (1, 'Luis', 'Admin', 'Sistema', '1234567', '70000001', 'luis@micasa.bo', 'Sucre, Bolivia'),
-    (2, 'Maria', 'Empleado', 'Sistema', '2234567', '70000002', 'maria@micasa.bo', 'Sucre, Bolivia'),
+    (2, 'Maria', 'Prueba', 'Sistema', '2234567', '70000002', 'maria@micasa.bo', 'Sucre, Bolivia'),
     (3, 'Mesero', 'Turno', 'Sistema', '3234567', '70000003', 'mesero@micasa.bo', 'Sucre, Bolivia'),
     (4, 'Caja', 'Turno', 'Sistema', '4234567', '70000004', 'caja@micasa.bo', 'Sucre, Bolivia'),
     (5, 'Cliente', 'Demo', 'Portal', '5234567', '70000005', 'cliente@micasa.bo', 'Sucre, Bolivia')
@@ -258,7 +256,7 @@ ON CONFLICT (id_cliente) DO NOTHING;
 INSERT INTO usuario (id_usuario, id_persona, id_cliente, usuario, password, rol, estado)
 VALUES
     (1, 1, NULL, 'luis', '$2b$10$ifW8ScebSReStsahF039X.EhtfTVo06rEH.fhYshybFGt.IhMURh6', 'admin', TRUE),
-    (2, 2, NULL, 'maria', '$2b$10$FGohPwvAqgfOliZniActWOyECdfbOulja.z2cgMYilGGRZl6e5l1u', 'empleado', TRUE),
+    (2, 2, NULL, 'maria', '$2b$10$FGohPwvAqgfOliZniActWOyECdfbOulja.z2cgMYilGGRZl6e5l1u', 'mesero', TRUE),
     (3, 3, NULL, 'mesero', '$2b$10$mXqnvKAQKpa.SoR5skneY.vn6wvDnGhVsbYHUwLzqsC8TG7CPFNPm', 'mesero', TRUE),
     (4, 4, NULL, 'caja', '$2b$10$P8EqJiMcXWYHWvSgmAqrkuVLK9CNR2KvGJ6gbH/v6w6m1IE2mCbhO', 'caja', TRUE),
     (5, 5, 1, 'cliente', '$2b$10$wnxyoUX7aE7mvctAFJ0aOOUClu1idZXJ7ueV37NQTuxnV2Wc7Bl3C', 'cliente', TRUE)
@@ -268,5 +266,3 @@ SELECT setval('persona_id_persona_seq', COALESCE((SELECT MAX(id_persona) FROM pe
 SELECT setval('cliente_id_cliente_seq', COALESCE((SELECT MAX(id_cliente) FROM cliente), 0), true);
 SELECT setval('usuario_id_usuario_seq', COALESCE((SELECT MAX(id_usuario) FROM usuario), 0), true);
 SELECT setval('producto_id_producto_seq', COALESCE((SELECT MAX(id_producto) FROM producto), 0), true);
-
-COMMIT;

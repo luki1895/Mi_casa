@@ -24,6 +24,10 @@ const verificarCajaAbierta = async (client, bloquearCierre = false) => {
     );
     if (!rowCount) throw Object.assign(new Error("La caja no está abierta para el turno de hoy"), { status: 409 });
 };
+const hayPagosEvento = async (db = pool) => {
+    const { rows } = await db.query("SELECT to_regclass('public.pago_evento') IS NOT NULL AS disponible");
+    return rows[0].disponible;
+};
 
 const abrirCaja = async (datos, idUsuario) => {
     const montoInicial = Number(datos.monto_inicial);
@@ -170,8 +174,12 @@ const listarGastos = async () => {
 };
 
 const panelCaja = async () => {
+    const pagosEventoDisponibles = await hayPagosEvento();
+    const sumaEventos = pagosEventoDisponibles
+        ? "(SELECT COALESCE(SUM(importe),0) FROM pago_evento WHERE verificado_en::date=CURRENT_DATE AND estado='VERIFICADO')"
+        : "0";
     const [ventas, gastos, saldo, pedidos, cierre, apertura] = await Promise.all([
-        pool.query("SELECT COALESCE(SUM(monto),0) AS total FROM pago WHERE fecha::date=CURRENT_DATE AND estado='CONFIRMADO'"),
+        pool.query(`SELECT COALESCE(SUM(monto),0)+${sumaEventos} AS total FROM pago WHERE fecha::date=CURRENT_DATE AND estado='CONFIRMADO'`),
         pool.query("SELECT COALESCE(SUM(total),0) AS total FROM gasto WHERE fecha::date=CURRENT_DATE"),
         pool.query("SELECT COALESCE(SUM(ingreso-egreso),0) AS total FROM caja WHERE fecha::date=CURRENT_DATE"),
         pool.query("SELECT COUNT(*)::int AS total FROM pedido WHERE fecha::date=CURRENT_DATE AND pagado=FALSE AND UPPER(estado) NOT LIKE 'CANCEL%'"),
@@ -196,13 +204,19 @@ const panelCaja = async () => {
 };
 
 const reporteCaja = async () => {
+    const pagosEventoDisponibles = await hayPagosEvento();
+    const pagosQuery = pagosEventoDisponibles
+        ? `SELECT metodo,COALESCE(SUM(monto),0) AS total,COUNT(*)::int AS cantidad
+           FROM (
+               SELECT metodo,monto FROM pago WHERE fecha::date=CURRENT_DATE AND estado='CONFIRMADO'
+               UNION ALL
+               SELECT metodo,importe AS monto FROM pago_evento WHERE verificado_en::date=CURRENT_DATE AND estado='VERIFICADO'
+           ) movimientos GROUP BY metodo ORDER BY metodo`
+        : `SELECT metodo,COALESCE(SUM(monto),0) AS total,COUNT(*)::int AS cantidad
+           FROM pago WHERE fecha::date=CURRENT_DATE AND estado='CONFIRMADO'
+           GROUP BY metodo ORDER BY metodo`;
     const [pagos, gastos] = await Promise.all([
-        pool.query(
-            `SELECT metodo,COALESCE(SUM(monto),0) AS total,COUNT(*)::int AS cantidad
-             FROM pago
-             WHERE fecha::date=CURRENT_DATE AND estado='CONFIRMADO'
-             GROUP BY metodo ORDER BY metodo`
-        ),
+        pool.query(pagosQuery),
         pool.query(
             `SELECT COALESCE(metodo_pago,'EFECTIVO') AS metodo,COALESCE(SUM(total),0) AS total,COUNT(*)::int AS cantidad
              FROM gasto
@@ -228,6 +242,17 @@ const historialCaja = async (fecha = new Date().toISOString().slice(0, 10)) => {
         || parsedFecha.toISOString().slice(0, 10) !== textoFecha) {
         throw Object.assign(new Error("La fecha consultada no es válida"), { status: 400 });
     }
+    const pagosEventoDisponibles = await hayPagosEvento();
+    const pagosQuery = pagosEventoDisponibles
+        ? `SELECT metodo,COALESCE(SUM(monto),0) AS total,COUNT(*)::int AS cantidad
+           FROM (
+               SELECT metodo,monto FROM pago WHERE fecha::date=$1::date AND estado='CONFIRMADO'
+               UNION ALL
+               SELECT metodo,importe AS monto FROM pago_evento WHERE verificado_en::date=$1::date AND estado='VERIFICADO'
+           ) pagos GROUP BY metodo ORDER BY metodo`
+        : `SELECT metodo,COALESCE(SUM(monto),0) AS total,COUNT(*)::int AS cantidad
+           FROM pago WHERE fecha::date=$1::date AND estado='CONFIRMADO'
+           GROUP BY metodo ORDER BY metodo`;
     const [apertura, cierre, movimientos, pagos, gastos] = await Promise.all([
         pool.query(
             `SELECT a.id_apertura,a.fecha,a.id_usuario,a.monto_inicial,a.abierta_en,u.usuario AS responsable
@@ -247,12 +272,7 @@ const historialCaja = async (fecha = new Date().toISOString().slice(0, 10)) => {
              FROM caja WHERE fecha::date=$1::date ORDER BY fecha,id_caja`,
             [textoFecha],
         ),
-        pool.query(
-            `SELECT metodo,COALESCE(SUM(monto),0) AS total,COUNT(*)::int AS cantidad
-             FROM pago WHERE fecha::date=$1::date AND estado='CONFIRMADO'
-             GROUP BY metodo ORDER BY metodo`,
-            [textoFecha],
-        ),
+        pool.query(pagosQuery, [textoFecha]),
         pool.query(
             `SELECT metodo_pago,COALESCE(SUM(total),0) AS total,COUNT(*)::int AS cantidad
              FROM gasto WHERE fecha::date=$1::date

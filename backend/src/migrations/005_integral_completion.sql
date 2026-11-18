@@ -1,12 +1,10 @@
-BEGIN;
-
 ALTER TABLE usuario DROP CONSTRAINT IF EXISTS usuario_rol_check;
-UPDATE usuario
-SET estado = FALSE
-WHERE LOWER(rol) = 'empleado';
 ALTER TABLE usuario
     ADD CONSTRAINT usuario_rol_check
-        CHECK (rol IN ('admin', 'mesero', 'caja', 'cliente', 'empleado'));
+        CHECK (
+            rol IN ('admin', 'mesero', 'caja', 'cliente')
+            OR (rol = 'empleado' AND estado IS FALSE)
+        );
 
 ALTER TABLE pago DROP CONSTRAINT IF EXISTS pago_recibido_check;
 ALTER TABLE pago
@@ -62,5 +60,3 @@ CREATE INDEX IF NOT EXISTS idx_pago_fecha_estado
     ON pago(fecha, estado);
 CREATE INDEX IF NOT EXISTS idx_gasto_fecha_metodo
     ON gasto(fecha, metodo_pago);
-
-COMMIT;

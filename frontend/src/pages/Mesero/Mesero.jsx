@@ -26,6 +26,7 @@ function Mesero() {
     const [clientes, setClientes] = useState([]);
     const [servicios, setServicios] = useState([]);
     const [pedidosActivos, setPedidosActivos] = useState([]);
+    const [atenciones, setAtenciones] = useState([]);
     const [pedidoSeleccionado, setPedidoSeleccionado] = useState(null);
     const [adicionalesCarrito, setAdicionalesCarrito] = useState([]);
     const [observacionesAdicionales, setObservacionesAdicionales] = useState("");
@@ -35,6 +36,7 @@ function Mesero() {
     const [nombreEventual, setNombreEventual] = useState("");
     const [telefonoEventual, setTelefonoEventual] = useState("");
     const [observacionesPedido, setObservacionesPedido] = useState("");
+    const [pedidoMesaId, setPedidoMesaId] = useState("");
     const [busqueda, setBusqueda] = useState("");
     const [cargando, setCargando] = useState(true);
     const [guardando, setGuardando] = useState(false);
@@ -48,6 +50,7 @@ function Mesero() {
             setClientes(clientesDemo);
             setServicios(JSON.parse(localStorage.getItem(DEMO_SERVICES_KEY) || "[]"));
             setPedidosActivos(JSON.parse(localStorage.getItem(DEMO_SERVICES_KEY) || "[]").filter((pedido) => !["ENTREGADO", "CANCELADO"].includes(pedido.estado)));
+            setAtenciones([]);
             setCargando(false);
             return;
         }
@@ -65,6 +68,14 @@ function Mesero() {
             setClientes((clientesResponse.data.data || []).filter((cliente) => cliente.estado !== false));
             setServicios(serviciosResponse.data.data || []);
             setPedidosActivos(activosResponse.data.data || []);
+            try {
+                const atencionesResponse = await api.get("/atenciones-mesa");
+                setAtenciones(atencionesResponse.data.data || []);
+            } catch (requestError) {
+                if (requestError.response?.status !== 503) throw requestError;
+                setAtenciones([]);
+                setAviso("La asociación de pedidos a mesas estará disponible después de aplicar la migración local preparada.");
+            }
         } catch (requestError) {
             setError(requestError.response?.data?.mensaje || "No se pudo cargar el menú y la bitácora. Revisa la conexión con el servidor.");
         } finally {
@@ -141,6 +152,7 @@ function Mesero() {
                 tipo_cliente: tipoCliente === "EVENTUAL" ? "EVENTUAL" : cliente.tipo_cliente,
                 cliente_nombre: tipoCliente === "EVENTUAL" ? nombreEventual.trim() : undefined,
                 cliente_telefono: tipoCliente === "EVENTUAL" ? telefonoEventual.trim() : undefined,
+                id_atencion: pedidoMesaId ? Number(pedidoMesaId) : undefined,
                 fecha: new Date().toISOString().slice(0, 10),
                 observaciones: observacionesPedido.trim(),
                 total,
@@ -170,6 +182,7 @@ function Mesero() {
             setNombreEventual("");
             setTelefonoEventual("");
             setObservacionesPedido("");
+            setPedidoMesaId("");
             setAviso("Pedido registrado y agregado a tu bitácora de servicios.");
         } catch (requestError) {
             setAviso(requestError.response?.data?.mensaje || "No se pudo registrar el pedido. Verifica los datos y vuelve a intentarlo.");
@@ -435,6 +448,14 @@ function Mesero() {
                                 <input value={telefonoEventual} onChange={(event) => setTelefonoEventual(event.target.value)} placeholder="Teléfono (opcional)" className="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm" />
                             </div>
                         )}
+
+                        <label className="block">
+                            <span className="mb-2 block text-sm font-semibold text-slate-700">Atención de mesa (opcional)</span>
+                            <select value={pedidoMesaId} onChange={(event) => setPedidoMesaId(event.target.value)} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm">
+                                <option value="">Sin mesa / pedido para llevar</option>
+                                {atenciones.map((atencion) => <option key={atencion.id_atencion} value={atencion.id_atencion}>Mesa {atencion.mesa} · atención #{atencion.id_atencion}</option>)}
+                            </select>
+                        </label>
 
                         <label className="block">
                             <span className="mb-2 block text-sm font-semibold text-slate-700">Observaciones para cocina</span>

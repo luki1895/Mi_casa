@@ -63,7 +63,7 @@ function Usuarios() {
       telefono: usuarioSeleccionado?.telefono || "",
       usuario: usuarioSeleccionado?.usuario || "",
       password: "",
-      rol: usuarioSeleccionado?.rol === "empleado" ? "" : usuarioSeleccionado?.rol || "mesero",
+      rol: usuarioSeleccionado?.rol || "mesero",
       estado: usuarioSeleccionado?.estado !== false && String(usuarioSeleccionado?.estado).toUpperCase() !== "INACTIVO",
     });
     setMostrarFormulario(true);
@@ -175,7 +175,6 @@ function Usuarios() {
               </label>
               <label className="block text-sm font-semibold text-slate-700">Rol
                 <select value={formulario.rol} onChange={(event) => setFormulario({ ...formulario, rol: event.target.value })} className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 p-3">
-                  {edicion?.rol === "empleado" && formulario.rol === "" && <option value="">Mantener rol legado (sin cambio)</option>}
                   {roles.map((rol) => <option key={rol} value={rol}>{rol}</option>)}
                 </select>
               </label>
@@ -213,7 +212,7 @@ function Usuarios() {
                           <td className="px-4 py-3">
                             <div className="flex flex-wrap gap-2">
                               <button type="button" onClick={() => resetFormulario(usuario)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold">Editar</button>
-                              <button type="button" disabled={!activo && usuario.rol === "empleado"} onClick={() => cambiarEstadoUsuario(usuario)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold disabled:opacity-50">{activo ? "Desactivar" : usuario.rol === "empleado" ? "Rol legado" : "Activar"}</button>
+                              <button type="button" onClick={() => cambiarEstadoUsuario(usuario)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold disabled:opacity-50">{activo ? "Desactivar" : "Activar"}</button>
                             </div>
                           </td>
                         </tr>
