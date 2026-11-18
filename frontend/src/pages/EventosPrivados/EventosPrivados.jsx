@@ -14,6 +14,22 @@ const mananaLaPaz = () => {
 };
 const nuevaSolicitud = () => window.crypto.randomUUID();
 const nuevoToken = () => `${window.crypto.randomUUID()}${window.crypto.randomUUID()}`;
+const respuestaInicial = (evento) => ({
+    nombre_responsable: evento.nombre_responsable || "",
+    celular: evento.celular || "",
+    correo: evento.correo || "",
+    tipo_evento: evento.tipo_evento || "",
+    fecha: String(evento.fecha || "").slice(0, 10),
+    hora_inicio: String(evento.hora_inicio || "").slice(0, 5),
+    hora_fin: String(evento.hora_fin || "").slice(0, 5),
+    invitados: evento.invitados || "",
+    decoracion: evento.decoracion || "CONSULTAR",
+    observaciones: evento.observaciones || "",
+    detalle: (evento.detalle || []).map((item) => ({
+        preparacion: item.preparacion,
+        cantidad_personas: item.cantidad_personas,
+    })),
+});
 const accesoInicial = () => {
     const fragmento = new URLSearchParams(window.location.hash.slice(1));
     const codigo = fragmento.get("codigo");
@@ -26,6 +42,8 @@ function EventosPrivados() {
     const [evento, setEvento] = useState(null);
     const [acceso] = useState(accesoInicial);
     const [resultado, setResultado] = useState(null);
+    const [respuesta, setRespuesta] = useState(null);
+    const [solicitudRespuesta, setSolicitudRespuesta] = useState(nuevaSolicitud);
     const [error, setError] = useState("");
     const [guardando, setGuardando] = useState(false);
     const [pago, setPago] = useState({ importe: "", metodo: "TRANSFERENCIA", referencia: "" });
@@ -51,6 +69,8 @@ function EventosPrivados() {
             headers: { "x-event-token": credencial.token },
         });
         setEvento(data.data);
+        setRespuesta(respuestaInicial(data.data));
+        setSolicitudRespuesta(nuevaSolicitud());
     };
 
     useEffect(() => {
@@ -112,6 +132,25 @@ function EventosPrivados() {
         }
     };
 
+    const responderSolicitud = async (eventForm) => {
+        eventForm.preventDefault();
+        if (!acceso || !respuesta) return;
+        setError("");
+        setGuardando(true);
+        try {
+            await api.patch(`/eventos-privados/acceso/${encodeURIComponent(acceso.codigo)}/responder`, {
+                ...respuesta,
+                invitados: Number(respuesta.invitados),
+                solicitud_id: solicitudRespuesta,
+            }, { headers: { "x-event-token": acceso.token } });
+            await cargarEvento(acceso);
+        } catch (requestError) {
+            setError(requestError.response?.data?.mensaje || "No se pudo reenviar la solicitud.");
+        } finally {
+            setGuardando(false);
+        }
+    };
+
     const cancelar = async () => {
         if (!acceso || !window.confirm("¿Cancelar esta solicitud de evento?")) return;
         setError("");
@@ -162,6 +201,10 @@ function EventosPrivados() {
                     {item.cantidad_personas} × {item.preparacion}
                     {Number(item.subtotal) > 0 && <span className="float-right font-semibold">Bs {Number(item.subtotal).toFixed(2)}</span>}
                 </li>)}</ul>
+                {evento.observaciones_admin && evento.estado === "REQUIERE_CAMBIOS" && <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm">
+                    <h3 className="font-bold text-amber-950">Cambios solicitados por Administración</h3>
+                    <p className="mt-1 whitespace-pre-wrap text-amber-900">{evento.observaciones_admin}</p>
+                </div>}
                 {Number(evento.total) > 0 && <div className="space-y-1 border-t pt-3 text-sm">
                     <p>Subtotal: <strong>Bs {Number(evento.subtotal).toFixed(2)}</strong></p>
                     <p>Costos adicionales: <strong>Bs {Number(evento.costos_adicionales).toFixed(2)}</strong></p>
@@ -169,6 +212,19 @@ function EventosPrivados() {
                     <p>Anticipo requerido: <strong>Bs {Number(evento.anticipo_requerido).toFixed(2)}</strong></p>
                     {evento.condiciones_cancelacion && <p>Condiciones: {evento.condiciones_cancelacion}</p>}
                 </div>}
+                {evento.propuestas?.length > 0 && <section className="space-y-3 border-t pt-4">
+                    <h3 className="font-bold">Versiones de la solicitud y presupuestos</h3>
+                    {evento.propuestas.map((version) => <article key={`${version.version}-${version.fecha}`} className="rounded-lg bg-slate-50 p-3 text-sm">
+                        <p className="font-semibold">Versión {version.version} · {version.accion.replaceAll("_", " ")} · {new Date(version.fecha).toLocaleString("es-BO")}</p>
+                        {version.observaciones_admin && <p className="mt-1 whitespace-pre-wrap">Observaciones: {version.observaciones_admin}</p>}
+                        {version.propuesta && <div className="mt-2 space-y-1">
+                            <p>Subtotal Bs {Number(version.propuesta.subtotal || 0).toFixed(2)} · adicionales Bs {Number(version.propuesta.costos_adicionales || 0).toFixed(2)} · total Bs {Number(version.propuesta.total || 0).toFixed(2)}</p>
+                            <p>Anticipo solicitado: Bs {Number(version.propuesta.anticipo_requerido || 0).toFixed(2)}</p>
+                            {version.propuesta.condiciones_cancelacion && <p>Condiciones acordadas: {version.propuesta.condiciones_cancelacion}</p>}
+                            <ul className="mt-1">{(version.propuesta.detalle || []).map((item, index) => <li key={`${item.preparacion}-${index}`}>{item.cantidad_personas} × {item.preparacion} · Bs {Number(item.precio_unitario || 0).toFixed(2)} c/u</li>)}</ul>
+                        </div>}
+                    </article>)}
+                </section>}
                 {evento.pagos.length > 0 && <section><h3 className="font-bold">Pagos registrados</h3><ul className="mt-2 space-y-2">{evento.pagos.map((item, index) => <li key={`${item.registrado_en}-${index}`} className="rounded-lg bg-slate-50 p-3 text-sm">Bs {Number(item.importe).toFixed(2)} · {item.metodo} · {item.estado}</li>)}</ul></section>}
                 {["APROBADO_PENDIENTE_ANTICIPO", "CONFIRMADO"].includes(evento.estado) && saldoAnticipo > 0 && <form onSubmit={registrarPago} className="space-y-3 rounded-xl border p-4">
                     <h3 className="font-bold">{evento.estado === "CONFIRMADO" ? "Registrar pago pendiente" : "Registrar anticipo para verificación"}</h3>
@@ -177,6 +233,38 @@ function EventosPrivados() {
                     <label className="block text-sm font-semibold">Método<select value={pago.metodo} onChange={(eventForm) => setPago({ ...pago, metodo: eventForm.target.value })} className="mt-1 w-full rounded-lg border p-3">{["EFECTIVO", "TRANSFERENCIA", "TARJETA", "QR"].map((item) => <option key={item}>{item}</option>)}</select></label>
                     <label className="block text-sm font-semibold">Referencia (opcional)<input maxLength="500" value={pago.referencia} onChange={(eventForm) => setPago({ ...pago, referencia: eventForm.target.value })} className="mt-1 w-full rounded-lg border p-3" /></label>
                     <button disabled={guardando} className="rounded-xl bg-slate-900 px-5 py-3 font-bold text-white disabled:opacity-50">Enviar pago a verificación</button>
+                </form>}
+                {evento.cancelacion && <section className="rounded-xl border p-4 text-sm">
+                    <h3 className="font-bold">Cancelación y devolución</h3>
+                    <p className="mt-1">Estado: {evento.cancelacion.estado.replaceAll("_", " ")}</p>
+                    <p>Motivo: {evento.cancelacion.motivo}</p>
+                    <p>Recibido Bs {Number(evento.cancelacion.monto_recibido).toFixed(2)} · devuelto Bs {Number(evento.cancelacion.monto_devuelto).toFixed(2)} · retenido Bs {Number(evento.cancelacion.monto_retenido).toFixed(2)}</p>
+                    {evento.cancelacion.referencia_devolucion && <p>Referencia: {evento.cancelacion.referencia_devolucion}</p>}
+                </section>}
+                {evento.estado === "REQUIERE_CAMBIOS" && respuesta && <form onSubmit={responderSolicitud} className="space-y-4 rounded-xl border border-amber-200 p-4">
+                    <h3 className="font-bold">Actualizar y reenviar la solicitud</h3>
+                    <p className="text-sm text-slate-600">Puedes corregir los datos solicitados. El presupuesto y el anticipo no se modifican desde este enlace; Administración volverá a cotizarlos.</p>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                        <label className="text-sm font-semibold">Responsable<input required maxLength="180" value={respuesta.nombre_responsable} onChange={(eventForm) => setRespuesta({ ...respuesta, nombre_responsable: eventForm.target.value })} className="mt-1 w-full rounded-lg border p-2" /></label>
+                        <label className="text-sm font-semibold">Teléfono<input required maxLength="30" value={respuesta.celular} onChange={(eventForm) => setRespuesta({ ...respuesta, celular: eventForm.target.value })} className="mt-1 w-full rounded-lg border p-2" /></label>
+                        <label className="text-sm font-semibold">Correo<input type="email" maxLength="180" value={respuesta.correo} onChange={(eventForm) => setRespuesta({ ...respuesta, correo: eventForm.target.value })} className="mt-1 w-full rounded-lg border p-2" /></label>
+                        <label className="text-sm font-semibold">Tipo de evento<input required maxLength="100" value={respuesta.tipo_evento} onChange={(eventForm) => setRespuesta({ ...respuesta, tipo_evento: eventForm.target.value })} className="mt-1 w-full rounded-lg border p-2" /></label>
+                        <label className="text-sm font-semibold">Fecha<input required type="date" min={mananaLaPaz()} value={respuesta.fecha} onChange={(eventForm) => setRespuesta({ ...respuesta, fecha: eventForm.target.value })} className="mt-1 w-full rounded-lg border p-2" /></label>
+                        <label className="text-sm font-semibold">Invitados<input required type="number" min="1" step="1" value={respuesta.invitados} onChange={(eventForm) => setRespuesta({ ...respuesta, invitados: eventForm.target.value })} className="mt-1 w-full rounded-lg border p-2" /></label>
+                        <label className="text-sm font-semibold">Hora de inicio<input required type="time" value={respuesta.hora_inicio} onChange={(eventForm) => setRespuesta({ ...respuesta, hora_inicio: eventForm.target.value })} className="mt-1 w-full rounded-lg border p-2" /></label>
+                        <label className="text-sm font-semibold">Hora de fin<input required type="time" value={respuesta.hora_fin} onChange={(eventForm) => setRespuesta({ ...respuesta, hora_fin: eventForm.target.value })} className="mt-1 w-full rounded-lg border p-2" /></label>
+                        <label className="text-sm font-semibold">Decoración<select value={respuesta.decoracion} onChange={(eventForm) => setRespuesta({ ...respuesta, decoracion: eventForm.target.value })} className="mt-1 w-full rounded-lg border p-2"><option value="CONSULTAR">Consultar</option><option value="SI">Sí</option><option value="NO">No</option></select></label>
+                    </div>
+                    <section className="space-y-2">
+                        <div className="flex items-center justify-between"><h4 className="font-semibold">Preparaciones solicitadas</h4><button type="button" onClick={() => setRespuesta({ ...respuesta, detalle: [...respuesta.detalle, { preparacion: "", cantidad_personas: 1 }] })} className="rounded-lg border px-3 py-2 text-sm">Agregar</button></div>
+                        {respuesta.detalle.map((item, index) => <div key={index} className="grid gap-2 sm:grid-cols-[1fr_150px_auto]">
+                            <input required maxLength="240" aria-label="Preparación solicitada" value={item.preparacion} onChange={(eventForm) => setRespuesta({ ...respuesta, detalle: respuesta.detalle.map((actual, pos) => pos === index ? { ...actual, preparacion: eventForm.target.value } : actual) })} className="rounded-lg border p-2" />
+                            <input required type="number" min="1" step="1" aria-label="Cantidad solicitada" value={item.cantidad_personas} onChange={(eventForm) => setRespuesta({ ...respuesta, detalle: respuesta.detalle.map((actual, pos) => pos === index ? { ...actual, cantidad_personas: eventForm.target.value } : actual) })} className="rounded-lg border p-2" />
+                            {respuesta.detalle.length > 1 && <button type="button" onClick={() => setRespuesta({ ...respuesta, detalle: respuesta.detalle.filter((_, pos) => pos !== index) })} className="rounded-lg border px-3 text-rose-700">Quitar</button>}
+                        </div>)}
+                    </section>
+                    <label className="block text-sm font-semibold">Observaciones<textarea rows="3" maxLength="4000" value={respuesta.observaciones} onChange={(eventForm) => setRespuesta({ ...respuesta, observaciones: eventForm.target.value })} className="mt-1 w-full rounded-lg border p-2" /></label>
+                    <button disabled={guardando} className="rounded-lg bg-slate-900 px-4 py-2 font-bold text-white disabled:opacity-50">{guardando ? "Enviando…" : "Reenviar a Administración"}</button>
                 </form>}
                 {["PENDIENTE_REVISION", "REQUIERE_CAMBIOS", "APROBADO_PENDIENTE_ANTICIPO"].includes(evento.estado) && <button type="button" disabled={guardando} onClick={cancelar} className="rounded-xl border border-rose-300 px-5 py-3 font-bold text-rose-700 disabled:opacity-50">Cancelar solicitud</button>}
                 <section><h3 className="font-bold">Historial de la solicitud</h3><ol className="mt-2 space-y-2">{evento.historial.map((item, index) => <li key={`${item.accion}-${item.fecha}-${index}`} className="rounded-lg bg-slate-50 p-3 text-sm">{item.accion} · {item.estado_anterior || "—"} → {item.estado_nuevo || "—"} · {new Date(item.fecha).toLocaleString("es-BO")}</li>)}</ol></section>

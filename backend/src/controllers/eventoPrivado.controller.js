@@ -14,8 +14,18 @@ export const obtenerPrivado = async (req, res) => {
 };
 
 export const cancelarPrivado = async (req, res) => {
-    try { response.ok(res, await eventoPrivadoModel.cancelarPorAcceso(req.params.codigo, req.get("x-event-token"))); }
+    try { response.ok(res, await eventoPrivadoModel.cancelarPorAcceso(req.params.codigo, req.get("x-event-token"), req.body)); }
     catch (error) { manejarError(res, error); }
+};
+
+export const responderPrivado = async (req, res) => {
+    try {
+        response.ok(
+            res,
+            await eventoPrivadoModel.responderSolicitud(req.params.codigo, req.get("x-event-token"), req.body),
+            "Solicitud reenviada para revisión",
+        );
+    } catch (error) { manejarError(res, error); }
 };
 
 export const registrarPago = async (req, res) => {
@@ -36,6 +46,26 @@ export const obtenerInterno = async (req, res) => {
 export const revisar = async (req, res) => {
     try { response.ok(res, await eventoPrivadoModel.revisar(req.params.id, req.body, req.usuario.id)); }
     catch (error) { manejarError(res, error); }
+};
+
+export const cancelarAdministrativamente = async (req, res) => {
+    try {
+        response.ok(
+            res,
+            await eventoPrivadoModel.cancelarAdministrativamente(req.params.id, req.body, req.usuario.id),
+            "Cancelación registrada y devolución autorizada cuando corresponde",
+        );
+    } catch (error) { manejarError(res, error); }
+};
+
+export const registrarDevolucion = async (req, res) => {
+    try {
+        response.ok(
+            res,
+            await eventoPrivadoModel.registrarDevolucion(req.params.id, req.body, req.usuario.id),
+            "Devolución registrada",
+        );
+    } catch (error) { manejarError(res, error); }
 };
 
 export const verificarPago = async (req, res) => {

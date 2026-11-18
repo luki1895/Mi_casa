@@ -48,6 +48,12 @@ test("public dish reservations reject incomplete contact and item data before da
     }), 400);
 });
 
+test("dish reservation internal operations reject invalid reservation ids before database access", async () => {
+    await debeRechazarComo(reservaPlatoModel.recibir("no-valido", 1), 400);
+    await debeRechazarComo(reservaPlatoModel.marcarNoPresentada("no-valido", 1), 400);
+    await debeRechazarComo(reservaPlatoModel.registrarImpresion("no-valido", 1, {}), 400);
+});
+
 test("private-event requests reject invalid schedules before database access", async () => {
     await debeRechazarComo(eventoPrivadoModel.crear({
         nombre_responsable: "Cliente",

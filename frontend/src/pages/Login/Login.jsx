@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import useAuth from "../../hooks/useAuth";
 import api from "../../api/axios";
 import { normalizeRole } from "../../auth/roles";
+import { Alert, Button, Input } from "../../components/ui";
 
 function Login() {
     const [form, setForm] = useState({ username: "", password: "" });
@@ -90,17 +91,15 @@ function Login() {
                         </div>
 
                         <form onSubmit={handleSubmit} className="space-y-5">
-                            <div>
-                                <label className="mb-2 block text-sm font-medium text-slate-700">Usuario</label>
-                                <input
-                                    type="text"
-                                    name="username"
-                                    value={form.username}
-                                    onChange={handleChange}
-                                    placeholder="Ingrese su usuario"
-                                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-amber-400 focus:bg-white focus:ring-4 focus:ring-amber-100"
-                                />
-                            </div>
+                            <Input
+                                label="Usuario"
+                                type="text"
+                                name="username"
+                                value={form.username}
+                                onChange={handleChange}
+                                placeholder="Ingrese su usuario"
+                                className="rounded-2xl"
+                            />
 
                             <div>
                                 <label className="mb-2 block text-sm font-medium text-slate-700">Contraseña</label>
@@ -134,19 +133,11 @@ function Login() {
                                 </button>
                             </div>
 
-                            {error && (
-                                <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
-                                    {error}
-                                </div>
-                            )}
+                            {error && <Alert type="error">{error}</Alert>}
 
-                            <button
-                                type="submit"
-                                className="w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-70"
-                                disabled={cargando}
-                            >
-                                {cargando ? "Validando acceso..." : "Entrar al sistema"}
-                            </button>
+                            <Button type="submit" size="lg" className="w-full rounded-2xl" loading={cargando}>
+                                Entrar al sistema
+                            </Button>
                         </form>
 
                         {showRecovery && (

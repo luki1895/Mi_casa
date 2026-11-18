@@ -7,9 +7,14 @@ const router = Router();
 
 router.use(verificarToken);
 router.get("/mesas", autorizarRoles("admin", "caja", "mesero"), atencionMesa.listarMesas);
+router.get("/admin/mesas", autorizarRoles("admin"), atencionMesa.listarMesasConfiguracion);
+router.get("/admin/sectores", autorizarRoles("admin"), atencionMesa.listarSectores);
+router.post("/admin/sectores", autorizarRoles("admin"), atencionMesa.crearSector);
+router.put("/admin/sectores/:id", autorizarRoles("admin"), atencionMesa.actualizarSector);
+router.put("/admin/distribucion", autorizarRoles("admin"), atencionMesa.guardarDistribucion);
 router.post("/mesas", autorizarRoles("admin"), atencionMesa.crearMesa);
 router.put("/mesas/:id", autorizarRoles("admin"), atencionMesa.actualizarMesa);
-router.post("/mesas/:idMesa/atenciones", autorizarRoles("admin", "caja", "mesero"), atencionMesa.abrirAtencion);
+router.post("/mesas/:idMesa/atenciones", autorizarRoles("admin", "caja"), atencionMesa.abrirAtencion);
 router.get("/", autorizarRoles("admin", "caja", "mesero"), atencionMesa.listarAtenciones);
 router.get("/:id", autorizarRoles("admin", "caja", "mesero"), atencionMesa.obtenerAtencion);
 router.post("/:id/cerrar", autorizarRoles("admin", "mesero"), atencionMesa.cerrarAtencion);

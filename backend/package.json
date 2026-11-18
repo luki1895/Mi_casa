@@ -7,6 +7,7 @@
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
     "migrate": "node src/migrate.js",
+    "test:migrations": "node --test src/migration-runner.test.js",
     "restore:data": "node src/restore-backup-data.js",
     "db:align-sequences": "node src/align-sequences.js",
     "db:ping": "node --input-type=module -e \"import pool from './src/config/db.js'; const start = Date.now(); try { const res = await pool.query('SELECT 1 AS ok'); console.log('Conexión OK:', res.rows[0]); } catch (error) { console.error('Conexión fallida:', error.message); process.exitCode = 1; } finally { await pool.end(); console.log('Tiempo:', Date.now() - start, 'ms'); }\"",

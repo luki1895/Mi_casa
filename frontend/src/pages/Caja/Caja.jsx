@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import api from "../../api/axios";
 import useAuth from "../../hooks/useAuth";
+import { Alert, Badge, Button, Card, ConfirmModal, Input, Modal, Select, Textarea } from "../../components/ui";
+import MesaBoard from "../../components/MesaBoard";
+import MesaAtencionDetail from "../../components/MesaAtencionDetail";
+import MesaOrderProductAdder from "../../components/MesaOrderProductAdder";
+import useMesaBoardData from "../../hooks/useMesaBoardData";
 
 const obtenerFecha = () => {
     const ahora = new Date();
@@ -14,10 +19,11 @@ const escaparHtml = (valor) => String(valor ?? "").replace(/[&<>"']/g, (caracter
 
 function Caja() {
     const { usuario } = useAuth();
-    const [seccionActiva, setSeccionActiva] = useState("RESUMEN");
+    const [seccionActiva, setSeccionActiva] = useState("MESAS");
+    const [vistaCobros, setVistaCobros] = useState("NUEVO");
     const [panel, setPanel] = useState({ ventas: 0, gastos: 0, saldo_esperado: 0, pedidos_pendientes: 0, cierre: null, apertura: null, estado_caja: "SIN_ABRIR" });
     const [pedidos, setPedidos] = useState([]);
-    const [atenciones, setAtenciones] = useState([]);
+    const [mesaSeleccionadaId, setMesaSeleccionadaId] = useState(null);
     const [atencionId, setAtencionId] = useState("");
     const [clientes, setClientes] = useState([]);
     const [menu, setMenu] = useState([]);
@@ -36,10 +42,16 @@ function Caja() {
     const [telefonoEventual, setTelefonoEventual] = useState("");
     const [observaciones, setObservaciones] = useState("");
     const [carrito, setCarrito] = useState([]);
-    const [busqueda, setBusqueda] = useState("");
+    const [busquedaPedidos, setBusquedaPedidos] = useState("");
     const [pedidoCobro, setPedidoCobro] = useState(null);
+    const [pedidoParaAgregar, setPedidoParaAgregar] = useState(null);
+    const [mostrarPedidoMesa, setMostrarPedidoMesa] = useState(false);
     const [solicitudCobro, setSolicitudCobro] = useState(null);
     const [ultimaComandaAdicional, setUltimaComandaAdicional] = useState(null);
+    const [pagoAnular, setPagoAnular] = useState(null);
+    const [pedidoParaCancelar, setPedidoParaCancelar] = useState(null);
+    const [motivoAnulacion, setMotivoAnulacion] = useState("");
+    const [confirmarCierre, setConfirmarCierre] = useState(false);
     const [recibido, setRecibido] = useState("");
     const [metodo, setMetodo] = useState("EFECTIVO");
     const [gasto, setGasto] = useState({ concepto: "", descripcion: "", total: "", metodo_pago: "EFECTIVO" });
@@ -47,6 +59,40 @@ function Caja() {
     const [montoInicial, setMontoInicial] = useState("");
     const [observacionesCierre, setObservacionesCierre] = useState("");
     const [guardando, setGuardando] = useState(false);
+    const {
+        mesas,
+        atenciones,
+        cargando: cargandoMesas,
+        actualizando: actualizandoMesas,
+        error: errorMesas,
+        errorMesas: errorConsultaMesas,
+        errorAtenciones: errorConsultaAtenciones,
+        atencion: atencionSeleccionada,
+        cargandoAtencion,
+        errorAtencion,
+        refresh: refrescarMesas,
+        loadAtencion: consultarAtencion,
+        clearAtencion,
+    } = useMesaBoardData({ paused: guardando, enabled: !usuario?.demo });
+
+    const mesaSeleccionada = mesas.find((mesa) => Number(mesa.id_mesa) === Number(mesaSeleccionadaId));
+    const idAtencionMesaSeleccionada = mesaSeleccionada?.id_atencion;
+    const detalleAtencionSeleccionada = atencionSeleccionada
+        && Number(atencionSeleccionada.id_atencion) === Number(idAtencionMesaSeleccionada)
+        ? atencionSeleccionada
+        : null;
+
+    useEffect(() => {
+        if (!mesaSeleccionadaId) return;
+        if (cargandoAtencion) return;
+        if (errorConsultaMesas || !idAtencionMesaSeleccionada) {
+            if (atencionSeleccionada) clearAtencion();
+            return;
+        }
+        if (Number(atencionSeleccionada?.id_atencion) !== Number(idAtencionMesaSeleccionada)) {
+            consultarAtencion(idAtencionMesaSeleccionada);
+        }
+    }, [atencionSeleccionada, cargandoAtencion, clearAtencion, consultarAtencion, errorConsultaMesas, idAtencionMesaSeleccionada, mesaSeleccionadaId]);
 
     const cargar = useCallback(async () => {
         setCargando(true);
@@ -54,7 +100,6 @@ function Caja() {
         if (usuario?.demo) {
             setPanel({ ventas: 0, gastos: 0, saldo_esperado: 0, pedidos_pendientes: 0, cierre: null, apertura: null, estado_caja: "SIN_ABRIR" });
             setPedidos([]);
-            setAtenciones([]);
             setClientes([]);
             setMenu([]);
             setGastos([]);
@@ -78,20 +123,42 @@ function Caja() {
             setGastos(gastosRes.data.data || []);
             setPagos(pagosRes.data.data || []);
             setAdicionales(adicionalesRes.data.data || []);
-            try {
-                const atencionesRes = await api.get("/atenciones-mesa");
-                setAtenciones(atencionesRes.data.data || []);
-            } catch (requestError) {
-                if (requestError.response?.status !== 503) throw requestError;
-                setAtenciones([]);
-                setAviso("La asociación de pedidos a mesas estará disponible después de aplicar la migración local preparada.");
-            }
         } catch (requestError) {
             setError(requestError.response?.data?.mensaje || "No se pudo cargar Caja. Comprueba la conexión y que se haya aplicado la migración PostgreSQL 001.");
         } finally {
             setCargando(false);
         }
     }, [usuario]);
+
+    const seleccionarMesa = (mesa) => {
+        setMesaSeleccionadaId(mesa.id_mesa);
+        setAtencionId(mesa.id_atencion ? String(mesa.id_atencion) : "");
+        setPedidoParaAgregar(null);
+        setMostrarPedidoMesa(false);
+    };
+
+    const abrirAtencionSeleccionada = async () => {
+        if (!mesaSeleccionada) return;
+        setGuardando(true);
+        setError("");
+        setAviso("");
+        try {
+            await api.post(`/atenciones-mesa/mesas/${mesaSeleccionada.id_mesa}/atenciones`);
+            setAviso(`Atención abierta para la mesa ${mesaSeleccionada.numero}.`);
+            await refrescarMesas(true);
+        } catch (requestError) {
+            setError(requestError.response?.data?.mensaje || "No se pudo abrir la atención. Actualiza el estado de la mesa e inténtalo nuevamente.");
+            await refrescarMesas(true);
+        } finally {
+            setGuardando(false);
+        }
+    };
+
+    const iniciarPedidoParaAtencion = (idAtencion) => {
+        setAtencionId(String(idAtencion));
+        setPedidoParaAgregar(null);
+        setMostrarPedidoMesa(true);
+    };
 
     const cargarHistorial = useCallback(async () => {
         setCargandoHistorial(true);
@@ -121,7 +188,10 @@ function Caja() {
     const cajaAbierta = panel.estado_caja === "ABIERTA";
     const totalCobroActual = Number(solicitudCobro?.total || pedidoCobro?.saldo_pendiente || 0);
     const cambio = Math.max(Number(recibido || 0) - totalCobroActual, 0);
-    const pedidosFiltrados = pedidos.filter((pedido) => `${pedido.id_pedido} ${pedido.cliente}`.toLowerCase().includes(busqueda.trim().toLowerCase()));
+    const pagosPedidoActual = pedidoCobro
+        ? pagos.filter((pago) => Number(pago.id_pedido) === Number(pedidoCobro.id_pedido))
+        : [];
+    const pedidosFiltrados = pedidos.filter((pedido) => `${pedido.id_pedido} ${pedido.cliente}`.toLowerCase().includes(busquedaPedidos.trim().toLowerCase()));
     const agregar = (producto) => setCarrito((actual) => {
         const existente = actual.find((item) => item.id_producto === producto.id_producto);
         if ((existente?.cantidad || 0) >= Number(producto.stock)) return actual;
@@ -134,6 +204,7 @@ function Caja() {
     const crearPedido = async (event) => {
         event.preventDefault();
         setAviso("");
+        const idAtencionDelPedido = atencionId ? Number(atencionId) : null;
         if (!carrito.length) return setAviso("Agrega al menos un producto disponible.");
         if (tipoCliente === "PENSIONADO" && !clienteId) return setAviso("Selecciona un cliente pensionado.");
         if (tipoCliente === "EVENTUAL" && !nombreEventual.trim()) return setAviso("Indica el nombre del cliente eventual.");
@@ -153,17 +224,21 @@ function Caja() {
                 detalle: carrito.map(({ id_producto, cantidad }) => ({ id_producto, cantidad })),
             });
             setCarrito([]); setClienteId(""); setNombreEventual(""); setTelefonoEventual(""); setObservaciones(""); setAtencionId("");
+            if (seccionActiva === "MESAS") setMostrarPedidoMesa(false);
             setAviso(`Pedido #${respuesta.data.data.id_pedido} registrado. Confirma el pago para emitir su comanda.`);
-            await cargar();
+            await Promise.all([cargar(), refrescarMesas(true)]);
+            if (idAtencionDelPedido) await consultarAtencion(idAtencionDelPedido);
         } catch (requestError) {
             setAviso(requestError.response?.data?.mensaje || "No se pudo registrar el pedido; puede que la disponibilidad haya cambiado.");
-            await cargar();
+            await Promise.all([cargar(), refrescarMesas(true)]);
+            if (idAtencionDelPedido) await consultarAtencion(idAtencionDelPedido);
         } finally { setGuardando(false); }
     };
 
     const confirmarPago = async (event) => {
         event.preventDefault();
         if (!pedidoCobro && !solicitudCobro) return;
+        const idAtencionActual = detalleAtencionSeleccionada?.id_atencion;
         setGuardando(true); setAviso("");
         try {
             if (solicitudCobro) {
@@ -185,7 +260,8 @@ function Caja() {
                 setPedidoCobro(null);
             }
             setRecibido("");
-            await cargar();
+            await Promise.all([cargar(), refrescarMesas(true)]);
+            if (idAtencionActual) await consultarAtencion(idAtencionActual);
         } catch (requestError) {
             setAviso(requestError.response?.data?.mensaje || "No se pudo registrar el pago.");
         } finally { setGuardando(false); }
@@ -214,41 +290,80 @@ function Caja() {
         } finally { setGuardando(false); }
     };
 
-    const cerrarCaja = async (event) => {
-        event.preventDefault(); setGuardando(true); setAviso("");
+    const solicitarCierreCaja = (event) => {
+        event.preventDefault();
+        setConfirmarCierre(true);
+    };
+
+    const cerrarCaja = async () => {
+        setGuardando(true); setAviso("");
         try {
             const resultado = await api.post("/caja/cerrar", { monto_contado: Number(montoContado), observaciones: observacionesCierre.trim() });
             setAviso(`Cierre guardado. Diferencia: ${importe(resultado.data.data.diferencia)}.`);
-            setMontoContado(""); setObservacionesCierre(""); await cargar();
+            setMontoContado(""); setObservacionesCierre(""); setConfirmarCierre(false); await cargar();
         } catch (requestError) {
             setAviso(requestError.response?.data?.mensaje || "No se pudo cerrar la caja.");
         } finally { setGuardando(false); }
     };
 
     const actualizarEstadoPedido = async (pedido, estado) => {
+        setGuardando(true);
         try {
             await api.patch(`/pedidos/${pedido.id_pedido}/estado`, { estado });
             setAviso(`Pedido #${pedido.id_pedido}: ${estadoBonito(estado)}.`);
-            await cargar();
+            await Promise.all([cargar(), refrescarMesas(true)]);
+            if (detalleAtencionSeleccionada?.id_atencion) {
+                await consultarAtencion(detalleAtencionSeleccionada.id_atencion);
+            }
+            return true;
         } catch (requestError) {
             setAviso(requestError.response?.data?.mensaje || "No se pudo actualizar el estado del pedido.");
+            return false;
+        } finally {
+            setGuardando(false);
         }
     };
 
-    const anularPago = async (pago) => {
-        if (!window.confirm(`¿Anular el pago #${pago.id_pago} por ${importe(pago.monto)}?`)) return;
-        const motivo = window.prompt("Motivo de anulación (obligatorio):");
-        if (motivo === null) return;
-        if (!motivo.trim()) {
+    const agregarProductosPedido = async (cambios) => {
+        if (!pedidoParaAgregar) return;
+        const idAtencionActual = pedidoParaAgregar.id_atencion || detalleAtencionSeleccionada?.id_atencion;
+        setGuardando(true);
+        setAviso("");
+        try {
+            await api.post(`/pedidos/${pedidoParaAgregar.id_pedido}/detalle`, cambios);
+            setPedidoParaAgregar(null);
+            setAviso(`Productos agregados al pedido #${pedidoParaAgregar.id_pedido}.`);
+            await Promise.all([cargar(), refrescarMesas(true)]);
+            if (idAtencionActual) await consultarAtencion(idAtencionActual);
+        } catch (requestError) {
+            setAviso(requestError.response?.data?.mensaje || "No se pudieron agregar productos al pedido.");
+        } finally {
+            setGuardando(false);
+        }
+    };
+
+    const abrirAnulacion = (pago) => {
+        setPagoAnular(pago);
+        setMotivoAnulacion("");
+    };
+
+    const anularPago = async () => {
+        if (!pagoAnular) return;
+        if (!motivoAnulacion.trim()) {
             setAviso("Debes indicar el motivo de la anulación.");
             return;
         }
         setGuardando(true);
         setAviso("");
         try {
-            await api.post(`/caja/pagos/${pago.id_pago}/anular`, { motivo: motivo.trim() });
-            setAviso(`Pago #${pago.id_pago} anulado; se recalculó el saldo del pedido.`);
-            await cargar();
+            await api.post(`/caja/pagos/${pagoAnular.id_pago}/anular`, { motivo: motivoAnulacion.trim() });
+            setAviso(`Pago #${pagoAnular.id_pago} anulado; se recalculó el saldo del pedido.`);
+            setPagoAnular(null);
+            setMotivoAnulacion("");
+            await Promise.all([cargar(), refrescarMesas(true)]);
+            if (detalleAtencionSeleccionada?.id_atencion) {
+                await consultarAtencion(detalleAtencionSeleccionada.id_atencion);
+            }
         } catch (requestError) {
             setAviso(requestError.response?.data?.mensaje || "No se pudo anular el pago.");
         } finally {
@@ -304,13 +419,115 @@ function Caja() {
         }
     };
 
+    const formularioNuevoPedido = (
+        <section className="rounded-2xl border border-[#E8DDD1] bg-white p-5 shadow-sm sm:p-6">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                    <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#B85C3B]">Nuevo pedido</p>
+                    <h2 className="mt-1 text-xl font-black text-[#342820]">
+                        {seccionActiva === "MESAS" ? `Pedido para mesa ${mesaSeleccionada?.numero || ""}` : "Registrar pedido"}
+                    </h2>
+                    <p className="mt-1 text-sm text-[#75675C]">El pedido queda asociado a la atención seleccionada; el pago se registra por separado.</p>
+                </div>
+                {seccionActiva === "MESAS" && (
+                    <Button type="button" variant="secondary" size="sm" onClick={() => setMostrarPedidoMesa(false)}>
+                        Volver al detalle
+                    </Button>
+                )}
+            </div>
+            <form onSubmit={crearPedido} className="mt-4 space-y-4">
+                <div className="flex flex-wrap gap-5 text-sm font-semibold text-[#594A3E]">
+                    <label className="flex items-center gap-2"><input type="radio" checked={tipoCliente === "PENSIONADO"} onChange={() => { setTipoCliente("PENSIONADO"); setClienteId(""); }} />Pensionado</label>
+                    <label className="flex items-center gap-2"><input type="radio" checked={tipoCliente === "EVENTUAL"} onChange={() => { setTipoCliente("EVENTUAL"); setClienteId(""); }} />Eventual</label>
+                </div>
+                {tipoCliente === "PENSIONADO" ? (
+                    <Select required value={clienteId} onChange={(event) => setClienteId(event.target.value)} aria-label="Selecciona el pensionado">
+                        <option value="">Selecciona el pensionado</option>
+                        {clientes.filter((cliente) => String(cliente.tipo_cliente || "").toUpperCase().includes("PENSION")).map((cliente) => (
+                            <option key={cliente.id_cliente} value={cliente.id_cliente}>{cliente.nombre}</option>
+                        ))}
+                    </Select>
+                ) : (
+                    <div className="grid gap-3 sm:grid-cols-2">
+                        <Input required value={nombreEventual} onChange={(event) => setNombreEventual(event.target.value)} placeholder="Nombre del cliente eventual" aria-label="Nombre del cliente eventual" />
+                        <Input value={telefonoEventual} onChange={(event) => setTelefonoEventual(event.target.value)} placeholder="Teléfono (opcional)" aria-label="Teléfono opcional" />
+                    </div>
+                )}
+                {seccionActiva === "MESAS" ? (
+                    <p className="rounded-xl bg-[#FFF8F2] p-3 text-sm font-semibold text-[#594A3E]">
+                        Mesa {mesaSeleccionada?.numero} · Atención #{atencionId}
+                    </p>
+                ) : (
+                    <>
+                        <div className="flex flex-col justify-between gap-3 rounded-xl bg-[#FFF8F2] p-4 sm:flex-row sm:items-center">
+                            <div>
+                                <p className="font-bold text-slate-900">¿El pedido es para una mesa?</p>
+                                <p className="mt-1 text-sm text-slate-600">Abre una atención y elige una mesa antes de asociar el pedido.</p>
+                            </div>
+                            <Button type="button" variant="outline" onClick={() => setSeccionActiva("MESAS")}>Elegir mesa</Button>
+                        </div>
+                        <label className="block text-sm font-semibold">Atención de mesa (opcional)
+                            <Select value={atencionId} onChange={(event) => setAtencionId(event.target.value)} aria-label="Atención de mesa">
+                                <option value="">Sin mesa / pedido para llevar</option>
+                                {atenciones.map((atencion) => (
+                                    <option key={atencion.id_atencion} value={atencion.id_atencion}>Mesa {atencion.mesa} · atención #{atencion.id_atencion}</option>
+                                ))}
+                            </Select>
+                        </label>
+                    </>
+                )}
+                <div>
+                    <p className="mb-2 text-sm font-bold text-[#342820]">Menú disponible hoy</p>
+                    <div className="max-h-64 space-y-2 overflow-y-auto">
+                        {menu.length ? menu.map((plato) => (
+                            <div key={`${plato.id_producto}-${plato.categoria}`} className="flex items-center justify-between gap-3 rounded-xl bg-[#FCFAF7] p-3">
+                                <div className="min-w-0">
+                                    <p className="truncate font-semibold">{plato.nombre} <span className="text-xs font-normal text-slate-500">· {plato.categoria}</span></p>
+                                    <p className="text-xs text-slate-500">{importe(plato.precio)} · {plato.stock} disponibles</p>
+                                </div>
+                                <Button type="button" size="sm" disabled={!Number(plato.stock) || guardando} onClick={() => agregar(plato)}>Agregar</Button>
+                            </div>
+                        )) : <p className="rounded-lg bg-[#FCFAF7] p-4 text-sm text-[#75675C]">Sin platos publicados para hoy.</p>}
+                    </div>
+                </div>
+                {carrito.length > 0 && (
+                    <ul className="space-y-2">
+                        {carrito.map((item) => (
+                            <li key={item.id_producto} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[#F0E9E1] p-3 text-sm">
+                                <span className="min-w-0 flex-1 font-semibold">{item.nombre} × {item.cantidad}</span>
+                                <span className="flex items-center gap-2">
+                                    <b>{importe(item.precio * item.cantidad)}</b>
+                                    <Button type="button" size="sm" variant="secondary" aria-label={`Quitar una unidad de ${item.nombre}`} onClick={() => cambiarCantidad(item.id_producto, -1)}>−</Button>
+                                    <Button type="button" size="sm" variant="secondary" aria-label={`Agregar una unidad de ${item.nombre}`} onClick={() => cambiarCantidad(item.id_producto, 1)} disabled={item.cantidad >= Number(item.stock)}>+</Button>
+                                </span>
+                            </li>
+                        ))}
+                    </ul>
+                )}
+                <Textarea label="Observaciones para cocina" value={observaciones} onChange={(event) => setObservaciones(event.target.value)} rows="2" placeholder="Indicaciones del pedido" />
+                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#E8DDD1] pt-3">
+                    <span className="font-semibold text-[#594A3E]">Total <strong className="ml-2 text-xl text-[#342820]">{importe(totalPedido)}</strong></span>
+                    <Button type="submit" variant="warning" loading={guardando} disabled={cargando || !menu.length || requiereCajaAbierta || !carrito.length}>Registrar pedido</Button>
+                </div>
+            </form>
+        </section>
+    );
+
     return (
         <div className="space-y-6">
-            <header className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-[0.25em] text-amber-700">Operaciones diarias</p><h1 className="mt-1 text-3xl font-black text-slate-900">Caja</h1><p className="mt-1 text-sm text-slate-500">Resumen, turno, cobros y movimientos financieros.</p></div><button onClick={cargar} className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold">Actualizar</button></header>
-            {error && <p role="alert" className="rounded-xl bg-rose-50 p-4 text-sm text-rose-800">{error}</p>}
-            {aviso && <p role="status" className="rounded-xl bg-amber-50 p-4 text-sm text-amber-900">{aviso}</p>}
+            <header className="flex flex-wrap items-end justify-between gap-4">
+                <div>
+                    <p className="text-xs font-bold uppercase tracking-[0.25em] text-amber-700">Operaciones diarias</p>
+                    <h1 className="mt-1 text-3xl font-black text-slate-900">Caja</h1>
+                    <p className="mt-1 text-sm text-slate-500">Turno, pedidos, cobros y movimientos financieros.</p>
+                </div>
+                <Button variant="secondary" onClick={cargar} loading={cargando}>Actualizar</Button>
+            </header>
+            {error && <Alert type="error" onRetry={cargar}>{error}</Alert>}
+            {aviso && <Alert type="warning">{aviso}</Alert>}
             <nav aria-label="Secciones de Caja" className="flex flex-wrap gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
                 {[
+                    ["MESAS", "Mesas"],
                     ["RESUMEN", "Resumen"],
                     ["TURNO", "Turno de caja"],
                     ["COBROS", "Cobros"],
@@ -331,6 +548,113 @@ function Caja() {
                     </button>
                 ))}
             </nav>
+            {seccionActiva === "MESAS" && (
+                <div className="space-y-5">
+                    <MesaBoard
+                        mesas={mesas}
+                        atenciones={atenciones}
+                        selectedMesaId={mesaSeleccionadaId}
+                        loading={cargandoMesas}
+                        refreshing={actualizandoMesas}
+                        error={errorMesas}
+                        mesaQueryError={errorConsultaMesas}
+                        atencionQueryError={errorConsultaAtenciones}
+                        onRetry={() => refrescarMesas(true)}
+                        onSelectMesa={seleccionarMesa}
+                        emptyMessage={usuario?.demo ? "Las mesas reales no se consultan en modo demostración." : undefined}
+                    />
+                    {mesaSeleccionada && !mesaSeleccionada.id_atencion && mesaSeleccionada.estado_atencion === "DISPONIBLE" && (
+                        <Card title={`Mesa ${mesaSeleccionada.numero} disponible`} description="Abre una atención para asociar uno o varios pedidos a esta mesa.">
+                            <Button variant="warning" loading={guardando} onClick={abrirAtencionSeleccionada}>
+                                Abrir atención
+                            </Button>
+                        </Card>
+                    )}
+                    {mesaSeleccionada?.estado_atencion === "FUERA_SERVICIO" && (
+                        <Alert type="warning">Esta mesa está fuera de servicio y no puede recibir una atención.</Alert>
+                    )}
+                    {mesaSeleccionada?.estado_atencion === "OCUPADA" && !mesaSeleccionada.id_atencion && (
+                        <Alert type="warning" onRetry={() => refrescarMesas(true)}>
+                            La mesa aparece ocupada, pero la API no devolvió el identificador de su atención. Actualiza la vista antes de continuar.
+                        </Alert>
+                    )}
+                    {mesaSeleccionada?.id_atencion && (
+                        <MesaAtencionDetail
+                            atencion={detalleAtencionSeleccionada}
+                            loading={cargandoAtencion}
+                            error={errorAtencion}
+                            onRetry={consultarAtencion}
+                            paymentsForOrder={(pedido) => pagos.filter((pago) => Number(pago.id_pedido) === Number(pedido.id_pedido))}
+                            actionsForOrder={(pedido) => (
+                                <>
+                                    {!pedido.detalleNoDisponible && pedido.estado === "PENDIENTE" && !pedido.pagado && (
+                                        <Button size="sm" variant="outline" onClick={() => setPedidoParaAgregar(pedido)}>
+                                            Agregar productos al pedido
+                                        </Button>
+                                    )}
+                                    {pedido.estado !== "CANCELADO" && Number(pedido.saldo_pendiente) > 0 && (
+                                        <Button
+                                            size="sm"
+                                            variant="success"
+                                            onClick={() => {
+                                                setSolicitudCobro(null);
+                                                setPedidoCobro({ ...pedido, pagado_total: pedido.pagado_confirmado });
+                                                setRecibido(String(pedido.saldo_pendiente));
+                                            }}
+                                        >
+                                            Cobrar saldo
+                                        </Button>
+                                    )}
+                                    {pedido.pagado && <Button size="sm" onClick={() => imprimir(pedido)}>Imprimir comanda</Button>}
+                                    {pedido.estado === "PENDIENTE" && !pedido.pagado && (
+                                        <Button size="sm" variant="outline" onClick={() => setPedidoParaCancelar(pedido)}>Cancelar pedido</Button>
+                                    )}
+                                    {pedido.estado === "EN_PREPARACION" && (
+                                        <Button size="sm" variant="warning" loading={guardando} onClick={() => actualizarEstadoPedido(pedido, "LISTO")}>Marcar listo</Button>
+                                    )}
+                                    {pedido.estado === "LISTO" && (
+                                        <Button size="sm" variant="success" loading={guardando} onClick={() => actualizarEstadoPedido(pedido, "ENTREGADO")}>Marcar entregado</Button>
+                                    )}
+                                </>
+                            )}
+                            renderOrderEditor={(pedido) => (
+                                pedidoParaAgregar?.id_pedido === pedido.id_pedido
+                                    && pedido.estado === "PENDIENTE"
+                                    && !pedido.pagado
+                                    && !pedido.detalleNoDisponible && (
+                                    <MesaOrderProductAdder
+                                        key={pedido.id_pedido}
+                                        pedido={pedido}
+                                        menu={menu}
+                                        loading={guardando}
+                                        onCancel={() => setPedidoParaAgregar(null)}
+                                        onSubmit={agregarProductosPedido}
+                                    />
+                                )
+                            )}
+                        />
+                    )}
+                    {detalleAtencionSeleccionada?.pedidos?.some((pedido) => pedido.pagado && pedido.estado !== "CANCELADO") && (
+                        <Alert type="info">
+                            Los pedidos pagados se conservan; el Mesero solicita adicionales y Caja los gestiona desde la sección Adicionales. Para esta mesa puedes abrir otro pedido sin alterar la comanda pagada.
+                        </Alert>
+                    )}
+                    {detalleAtencionSeleccionada && (
+                        <div className="space-y-3">
+                            <Button
+                                variant="warning"
+                                onClick={() => {
+                                    if (mostrarPedidoMesa) setMostrarPedidoMesa(false);
+                                    else iniciarPedidoParaAtencion(detalleAtencionSeleccionada.id_atencion);
+                                }}
+                            >
+                                {mostrarPedidoMesa ? "Cerrar formulario" : "Crear pedido para esta atención"}
+                            </Button>
+                            {mostrarPedidoMesa && formularioNuevoPedido}
+                        </div>
+                    )}
+                </div>
+            )}
             {seccionActiva === "RESUMEN" && (
                 <div className="space-y-5">
                     <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
@@ -369,7 +693,7 @@ function Caja() {
                                 <h3 className="font-black text-amber-950">Inicia el turno de Caja</h3>
                                 <p className="mt-1 text-sm text-amber-900">Registra el efectivo inicial desde la sección Caja para habilitar las operaciones del turno.</p>
                             </div>
-                            <button type="button" onClick={() => setSeccionActiva("TURNO")} className="rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-bold text-slate-950 hover:bg-amber-400">Ir a Caja</button>
+                            <Button type="button" variant="warning" onClick={() => setSeccionActiva("TURNO")}>Abrir turno</Button>
                         </section>
                     )}
                     <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
@@ -379,9 +703,10 @@ function Caja() {
                                 <h2 className="mt-1 text-xl font-black text-slate-900">Tareas del área</h2>
                             </div>
                             <div className="flex flex-wrap gap-2">
-                                <button type="button" onClick={() => setSeccionActiva("TURNO")} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50">Gestionar turno</button>
-                                <button type="button" onClick={() => setSeccionActiva("COBROS")} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50">Registrar o cobrar pedidos</button>
-                                <button type="button" onClick={() => setSeccionActiva("MOVIMIENTOS")} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50">Ver movimientos</button>
+                                <Button variant="secondary" onClick={() => setSeccionActiva("TURNO")}>Gestionar turno</Button>
+                                <Button variant="secondary" onClick={() => { setSeccionActiva("COBROS"); setVistaCobros("NUEVO"); }}>Nuevo pedido</Button>
+                                <Button variant="secondary" onClick={() => { setSeccionActiva("COBROS"); setVistaCobros("PEDIDOS"); }}>Pedidos y cobros</Button>
+                                <Button variant="secondary" onClick={() => setSeccionActiva("MESAS")}>Mesas y atenciones</Button>
                             </div>
                         </div>
                     </section>
@@ -397,8 +722,8 @@ function Caja() {
                 </div>
                 {!cajaAbierta && <form onSubmit={abrirCaja} className="flex flex-col gap-2 sm:flex-row">
                     <label className="sr-only" htmlFor="monto-inicial">Monto inicial en efectivo</label>
-                    <input id="monto-inicial" required type="number" min="0" step="0.01" value={montoInicial} onChange={(event) => setMontoInicial(event.target.value)} placeholder="Monto inicial Bs" className="rounded-xl border border-slate-200 px-3 py-2.5" />
-                    <button disabled={guardando || usuario?.demo} className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50">Abrir caja</button>
+                    <Input id="monto-inicial" aria-label="Monto inicial en Bs" required type="number" min="0" step="0.01" value={montoInicial} onChange={(event) => setMontoInicial(event.target.value)} placeholder="Monto inicial Bs" />
+                    <Button type="submit" variant="success" loading={guardando} disabled={usuario?.demo}>Abrir caja</Button>
                 </form>}
             </section>
             <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -416,13 +741,13 @@ function Caja() {
                     ) : panel.estado_caja !== "ABIERTA" ? (
                         <p className="mt-4 text-sm text-slate-600">Abre la caja para iniciar y cerrar el turno.</p>
                     ) : (
-                        <form onSubmit={cerrarCaja} className="mt-4 space-y-3">
+                        <form onSubmit={solicitarCierreCaja} className="mt-4 space-y-3">
                             <p className="text-sm text-slate-600">Saldo esperado: <b>{importe(panel.saldo_esperado)}</b></p>
-                            {(Number(panel.pedidos_pendientes) > 0 || adicionales.length > 0) && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Resuelve los cobros pendientes antes de cerrar.</p>}
-                            <input required type="number" min="0" step="0.01" value={montoContado} onChange={(event) => setMontoContado(event.target.value)} placeholder="Monto contado en caja" className="w-full rounded-xl border border-slate-200 px-3 py-3" />
+                            {(Number(panel.pedidos_pendientes) > 0 || adicionales.length > 0) && <Alert type="warning">Resuelve los cobros pendientes antes de cerrar.</Alert>}
+                            <Input label="Efectivo contado (Bs)" required type="number" min="0" step="0.01" value={montoContado} onChange={(event) => setMontoContado(event.target.value)} placeholder="Monto contado en caja" />
                             <p className="text-sm">Diferencia estimada: <b>{importe(Number(montoContado || 0) - Number(panel.saldo_esperado || 0))}</b></p>
-                            <textarea value={observacionesCierre} onChange={(event) => setObservacionesCierre(event.target.value)} rows="2" placeholder="Observaciones del cierre (opcional)" className="w-full rounded-xl border border-slate-200 px-3 py-3" />
-                            <button disabled={guardando || Number(panel.pedidos_pendientes) > 0 || adicionales.length > 0} className="rounded-xl bg-slate-900 px-5 py-3 font-bold text-white disabled:opacity-50">Cerrar caja</button>
+                            <Textarea label="Observaciones del cierre (opcional)" value={observacionesCierre} onChange={(event) => setObservacionesCierre(event.target.value)} rows="2" />
+                            <Button type="submit" loading={guardando} disabled={Number(panel.pedidos_pendientes) > 0 || adicionales.length > 0}>Revisar cierre de caja</Button>
                         </form>
                     )}
                 </section>
@@ -431,39 +756,73 @@ function Caja() {
             )}
             {seccionActiva === "COBROS" && (
             <>
-            <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-                <section className="rounded-2xl bg-white p-5 shadow-sm">
-                    <h2 className="text-xl font-black">Registrar pedido</h2>
-                    <form onSubmit={crearPedido} className="mt-4 space-y-4">
-                        <div className="flex gap-5 text-sm font-semibold"><label className="flex items-center gap-2"><input type="radio" checked={tipoCliente === 'PENSIONADO'} onChange={() => { setTipoCliente('PENSIONADO'); setClienteId(''); }} />Pensionado</label><label className="flex items-center gap-2"><input type="radio" checked={tipoCliente === 'EVENTUAL'} onChange={() => { setTipoCliente('EVENTUAL'); setClienteId(''); }} />Eventual</label></div>
-                        {tipoCliente === 'PENSIONADO' ? <select required value={clienteId} onChange={(event) => setClienteId(event.target.value)} className="w-full rounded-xl border border-slate-200 px-3 py-3"><option value="">Selecciona el pensionado</option>{clientes.filter((cliente) => String(cliente.tipo_cliente || '').toUpperCase().includes('PENSION')).map((cliente) => <option key={cliente.id_cliente} value={cliente.id_cliente}>{cliente.nombre}</option>)}</select> : <div className="grid gap-3 sm:grid-cols-2"><input required value={nombreEventual} onChange={(event) => setNombreEventual(event.target.value)} placeholder="Nombre del cliente eventual" className="rounded-xl border border-slate-200 px-3 py-3" /><input value={telefonoEventual} onChange={(event) => setTelefonoEventual(event.target.value)} placeholder="Teléfono (opcional)" className="rounded-xl border border-slate-200 px-3 py-3" /></div>}
-                        <label className="block text-sm font-semibold">Atención de mesa (opcional)
-                            <select value={atencionId} onChange={(event) => setAtencionId(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-3">
-                                <option value="">Sin mesa / pedido para llevar</option>
-                                {atenciones.map((atencion) => <option key={atencion.id_atencion} value={atencion.id_atencion}>Mesa {atencion.mesa} · atención #{atencion.id_atencion}</option>)}
-                            </select>
-                        </label>
-                        <div><p className="mb-2 text-sm font-bold">Menú disponible hoy</p><div className="max-h-64 space-y-2 overflow-y-auto">{menu.length ? menu.map((plato) => <div key={`${plato.id_producto}-${plato.categoria}`} className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 p-3"><div><p className="font-semibold">{plato.nombre} <span className="text-xs font-normal text-slate-500">· {plato.categoria}</span></p><p className="text-xs text-slate-500">{importe(plato.precio)} · {plato.stock} disponibles</p></div><button type="button" disabled={!Number(plato.stock)} onClick={() => agregar(plato)} className="rounded-lg bg-slate-900 px-3 py-2 text-xs font-bold text-white disabled:bg-slate-300">Agregar</button></div>) : <p className="rounded-lg bg-slate-50 p-4 text-sm text-slate-500">Sin platos publicados para hoy.</p>}</div></div>
-                        {carrito.length > 0 && <ul className="space-y-2">{carrito.map((item) => <li key={item.id_producto} className="flex items-center justify-between rounded-lg border border-slate-100 p-3 text-sm"><span>{item.nombre} × {item.cantidad}</span><span className="flex items-center gap-2"><b>{importe(item.precio * item.cantidad)}</b><button type="button" onClick={() => cambiarCantidad(item.id_producto, -1)} className="px-2 text-lg">−</button><button type="button" onClick={() => cambiarCantidad(item.id_producto, 1)} disabled={item.cantidad >= Number(item.stock)} className="px-2 text-lg disabled:opacity-30">+</button></span></li>)}</ul>}
-                        <textarea value={observaciones} onChange={(event) => setObservaciones(event.target.value)} placeholder="Observaciones para cocina" rows="2" className="w-full rounded-xl border border-slate-200 px-3 py-3" />
-                        <div className="flex items-center justify-between border-t pt-3"><span className="font-semibold">Total</span><b className="text-xl">{importe(totalPedido)}</b></div>
-                        <button disabled={guardando || cargando || !menu.length || requiereCajaAbierta} className="w-full rounded-xl bg-amber-500 px-4 py-3 font-black text-slate-950 disabled:opacity-50">Confirmar pedido</button>
-                    </form>
-                </section>
-                <section className="rounded-2xl bg-white p-5 shadow-sm">
-                    <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-xl font-black">Pedidos y seguimiento</h2><p className="text-sm text-slate-500">Estados, cobros y comandas</p></div><input value={busqueda} onChange={(event) => setBusqueda(event.target.value)} placeholder="Buscar cliente o # pedido" className="rounded-xl border border-slate-200 px-3 py-2 text-sm" /></div>
-                    <div className="mt-4 space-y-3">{pedidosFiltrados.map((pedido) => <article key={pedido.id_pedido} className="rounded-xl border border-slate-100 p-4"><div className="flex flex-wrap items-start justify-between gap-2"><div><p className="font-black">#{pedido.id_pedido} · {pedido.cliente}</p><p className="mt-1 text-xs text-slate-500">{new Date(pedido.fecha).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })} · {estadoBonito(pedido.estado)}</p></div><b>{importe(pedido.total)}</b></div><ul className="mt-3 text-sm text-slate-600">{pedido.detalle.map((item, index) => <li key={`${item.id_producto}-${index}`}>{item.cantidad} × {item.nombre}</li>)}</ul>{pedido.observaciones && <p className="mt-2 text-xs text-slate-500">Nota cocina: {pedido.observaciones}</p>}                                        <div className="mt-3 flex flex-wrap gap-2">{Number(pedido.saldo_pendiente) > 0 && <button onClick={() => { setPedidoCobro(pedido); setSolicitudCobro(null); setRecibido(String(pedido.saldo_pendiente)); }} className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-bold">Cobrar saldo</button>}{pedido.pagado && <button onClick={() => imprimir(pedido)} className="rounded-lg bg-slate-900 px-3 py-2 text-xs font-bold text-white">Imprimir comanda</button>}{pedido.estado === "PENDIENTE" && <>{pedido.pagado && <button onClick={() => actualizarEstadoPedido(pedido, "EN_PREPARACION")} className="rounded-lg bg-amber-100 px-3 py-2 text-xs font-bold text-amber-900">Enviar a preparación</button>}{!pedido.pagado && <button onClick={() => actualizarEstadoPedido(pedido, "CANCELADO")} className="rounded-lg border border-rose-200 px-3 py-2 text-xs font-bold text-rose-700">Cancelar pedido</button>}</>}{pedido.estado === "EN_PREPARACION" && <button onClick={() => actualizarEstadoPedido(pedido, "LISTO")} className="rounded-lg bg-blue-100 px-3 py-2 text-xs font-bold text-blue-900">Marcar listo</button>}{pedido.estado === "LISTO" && <button onClick={() => actualizarEstadoPedido(pedido, "ENTREGADO")} className="rounded-lg bg-emerald-100 px-3 py-2 text-xs font-bold text-emerald-900">Marcar entregado</button>}</div></article>)}{!pedidosFiltrados.length && <p className="py-8 text-center text-sm text-slate-500">No hay pedidos que coincidan.</p>}</div>
-                </section>
+            <nav aria-label="Tareas de cobro" className="flex flex-wrap gap-2 border-b border-slate-200 pb-2">
+                {[
+                    ["NUEVO", "Nuevo pedido"],
+                    ["PEDIDOS", "Pedidos y cobros"],
+                    ["ADICIONALES", `Adicionales${adicionales.length ? ` · ${adicionales.length}` : ""}`],
+                ].map(([vista, titulo]) => (
+                    <button
+                        key={vista}
+                        type="button"
+                        onClick={() => setVistaCobros(vista)}
+                        aria-current={vistaCobros === vista ? "page" : undefined}
+                        className={`min-h-11 rounded-xl px-4 py-2.5 text-sm font-bold transition-colors ${vistaCobros === vista ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-white"}`}
+                    >
+                        {titulo}
+                    </button>
+                ))}
+            </nav>
+            <div className="grid gap-6">
+                {vistaCobros === "NUEVO" && formularioNuevoPedido}
+                {vistaCobros === "PEDIDOS" && <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+                    <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
+                        <div><h2 className="text-xl font-black">Pedidos y cobros</h2><p className="text-sm text-slate-500">Consulta saldo, pagos registrados y estado del pedido.</p></div>
+                        <Input value={busquedaPedidos} onChange={(event) => setBusquedaPedidos(event.target.value)} placeholder="Buscar cliente o número de pedido" aria-label="Buscar pedidos por cliente o número" className="sm:max-w-xs" />
+                    </div>
+                    <div className="mt-4 space-y-3">
+                        {pedidosFiltrados.map((pedido) => (
+                            <Card key={pedido.id_pedido} className="border-slate-200">
+                                <div className="flex flex-wrap items-start justify-between gap-3">
+                                    <div>
+                                        <p className="font-black text-slate-900">Pedido #{pedido.id_pedido} · {pedido.cliente}</p>
+                                        <p className="mt-1 text-xs text-slate-500">{new Date(pedido.fecha).toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" })}</p>
+                                    </div>
+                                    <Badge variant={pedido.estado === "ENTREGADO" ? "success" : pedido.estado === "PENDIENTE" ? "warning" : "info"}>
+                                        {estadoBonito(pedido.estado)}
+                                    </Badge>
+                                </div>
+                                <ul className="mt-3 space-y-1 text-sm text-slate-600">
+                                    {pedido.detalle.map((item, index) => <li key={`${item.id_producto}-${index}`}>{item.cantidad} × {item.nombre}</li>)}
+                                </ul>
+                                {pedido.observaciones && <p className="mt-2 text-xs text-slate-500">Nota cocina: {pedido.observaciones}</p>}
+                                <div className="mt-4 grid gap-2 rounded-xl bg-slate-50 p-3 text-sm sm:grid-cols-3">
+                                    <p>Total: <strong>{importe(pedido.total)}</strong></p>
+                                    <p>Pagos confirmados: <strong>{importe(pedido.pagado_total)}</strong></p>
+                                    <p>Saldo pendiente: <strong className={Number(pedido.saldo_pendiente) > 0 ? "text-rose-700" : "text-emerald-700"}>{importe(pedido.saldo_pendiente)}</strong></p>
+                                </div>
+                                <div className="mt-4 flex flex-wrap gap-2">
+                                    {Number(pedido.saldo_pendiente) > 0 && <Button size="sm" variant="success" onClick={() => { setPedidoCobro(pedido); setSolicitudCobro(null); setRecibido(String(pedido.saldo_pendiente)); }}>Cobrar saldo</Button>}
+                                    {pedido.pagado && <Button size="sm" onClick={() => imprimir(pedido)}>Imprimir comanda</Button>}
+                                    {pedido.estado === "PENDIENTE" && !pedido.pagado && <Button size="sm" variant="outline" disabled={guardando} onClick={() => setPedidoParaCancelar(pedido)}>Cancelar pedido</Button>}
+                                    {pedido.estado === "EN_PREPARACION" && <Button size="sm" variant="warning" loading={guardando} onClick={() => actualizarEstadoPedido(pedido, "LISTO")}>Marcar listo</Button>}
+                                    {pedido.estado === "LISTO" && <Button size="sm" variant="success" loading={guardando} onClick={() => actualizarEstadoPedido(pedido, "ENTREGADO")}>Marcar entregado</Button>}
+                                </div>
+                            </Card>
+                        ))}
+                        {!pedidosFiltrados.length && <p className="py-8 text-center text-sm text-slate-500">No hay pedidos que coincidan.</p>}
+                    </div>
+                </section>}
             </div>
-            <section className="rounded-2xl bg-white p-5 shadow-sm">
+            {vistaCobros === "ADICIONALES" && <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
                 <h2 className="text-xl font-black">Solicitudes adicionales por cobrar</h2>
                 <p className="mt-1 text-sm text-slate-500">Cobros adicionales solicitados por los meseros.</p>
                 <div className="mt-4 grid gap-3 md:grid-cols-2">
-                    {adicionales.map((solicitud) => <article key={solicitud.id_solicitud} className="rounded-xl border border-slate-100 p-4"><div className="flex justify-between"><b>Pedido #{solicitud.id_pedido} · {solicitud.cliente}</b><b>{importe(solicitud.total)}</b></div><ul className="my-2 text-sm text-slate-600">{solicitud.detalle.map((item, index) => <li key={`${item.id_producto}-${index}`}>{item.cantidad} × {item.nombre}</li>)}</ul>{solicitud.observaciones && <p className="mb-3 text-xs text-slate-500">Nota de cocina: {solicitud.observaciones}</p>}<button onClick={() => { setPedidoCobro(null); setSolicitudCobro(solicitud); setRecibido(String(solicitud.total)); }} className="rounded-lg bg-amber-500 px-3 py-2 text-xs font-black">Cobrar adicional</button></article>)}
+                    {adicionales.map((solicitud) => <Card key={solicitud.id_solicitud} className="border-slate-200"><div className="flex flex-wrap justify-between gap-2"><b>Pedido #{solicitud.id_pedido} · {solicitud.cliente}</b><b>{importe(solicitud.total)}</b></div><ul className="my-3 space-y-1 text-sm text-slate-600">{solicitud.detalle.map((item, index) => <li key={`${item.id_producto}-${index}`}>{item.cantidad} × {item.nombre}</li>)}</ul>{solicitud.observaciones && <p className="mb-3 text-xs text-slate-500">Nota de cocina: {solicitud.observaciones}</p>}<Button size="sm" variant="warning" onClick={() => { setPedidoCobro(null); setSolicitudCobro(solicitud); setRecibido(String(solicitud.total)); }}>Cobrar adicional</Button></Card>)}
                     {!adicionales.length && <p className="py-4 text-sm text-slate-500">No hay cobros adicionales pendientes.</p>}
                 </div>
                 {ultimaComandaAdicional && <button onClick={() => imprimir(ultimaComandaAdicional)} className="mt-4 rounded-lg bg-slate-900 px-3 py-2 text-xs font-bold text-white">Imprimir última comanda adicional</button>}
-            </section>
+            </section>}
             </>
             )}
             {seccionActiva === "MOVIMIENTOS" && (
@@ -484,7 +843,7 @@ function Caja() {
                     <article className="rounded-2xl bg-white p-5 shadow-sm">
                         <h2 className="text-xl font-black">Ingresos registrados</h2>
                         <div className="mt-3 max-h-96 overflow-auto">
-                            {pagos.map((pago) => <div key={pago.id_pago} className="flex flex-wrap items-center justify-between gap-3 border-t py-2 text-sm"><span>Pago #{pago.id_pago} · Pedido #{pago.id_pedido} · {pago.metodo} · {new Date(pago.fecha).toLocaleString("es")} · {pago.estado}{pago.motivo_anulacion && <small className="block text-slate-500">Motivo: {pago.motivo_anulacion}</small>}</span><span className="flex items-center gap-3"><b>{importe(pago.monto)}</b>{panel.estado_caja === "ABIERTA" && pago.estado === "CONFIRMADO" && pago.estado_pedido !== "ENTREGADO" && <button type="button" disabled={guardando} onClick={() => anularPago(pago)} className="rounded-md border border-rose-200 px-2 py-1 text-xs font-semibold text-rose-700 disabled:opacity-50">Anular</button>}</span></div>)}
+                            {pagos.map((pago) => <div key={pago.id_pago} className="flex flex-wrap items-center justify-between gap-3 border-t py-2 text-sm"><span>Pago #{pago.id_pago} · Pedido #{pago.id_pedido} · {pago.metodo} · {new Date(pago.fecha).toLocaleString("es")} · {pago.estado}{pago.motivo_anulacion && <small className="block text-slate-500">Motivo: {pago.motivo_anulacion}</small>}</span><span className="flex items-center gap-3"><b>{importe(pago.monto)}</b>{panel.estado_caja === "ABIERTA" && pago.estado === "CONFIRMADO" && pago.estado_pedido !== "ENTREGADO" && <Button type="button" size="sm" variant="outline" disabled={guardando} onClick={() => abrirAnulacion(pago)}>Anular</Button>}</span></div>)}
                             {!pagos.length && <p className="py-4 text-sm text-slate-500">No hay pagos registrados.</p>}
                         </div>
                     </article>
@@ -517,7 +876,108 @@ function Caja() {
                     </>}
                 </section>
             )}
-            {(pedidoCobro || solicitudCobro) && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4"><form onSubmit={confirmarPago} className="w-full max-w-md space-y-4 rounded-2xl bg-white p-6 shadow-xl"><div><p className="text-xs uppercase tracking-widest text-amber-700">{solicitudCobro ? "Cobro adicional" : "Cobro de pedido"}</p><h2 className="mt-1 text-2xl font-black">#{pedidoCobro?.id_pedido || solicitudCobro?.id_pedido} · {pedidoCobro?.cliente || solicitudCobro?.cliente}</h2></div><p>Importe pendiente: <b>{importe(totalCobroActual)}</b></p><label className="block text-sm font-semibold">Método<select value={metodo} onChange={(event) => setMetodo(event.target.value)} className="mt-1 w-full rounded-lg border p-3">{['EFECTIVO','TARJETA','TRANSFERENCIA','QR'].map((opcion) => <option key={opcion}>{opcion}</option>)}</select></label><label className="block text-sm font-semibold">Importe recibido<input autoFocus required type="number" min={totalCobroActual} step="0.01" value={recibido} onChange={(event) => setRecibido(event.target.value)} className="mt-1 w-full rounded-lg border p-3" /></label><p className="text-sm">Cambio: <b>{metodo === 'EFECTIVO' ? importe(cambio) : importe(0)}</b></p><div className="flex gap-3"><button type="button" onClick={() => { setPedidoCobro(null); setSolicitudCobro(null); }} className="w-full rounded-xl border px-4 py-3 font-bold">Cancelar</button><button disabled={guardando} className="w-full rounded-xl bg-emerald-700 px-4 py-3 font-bold text-white">Confirmar pago</button></div></form></div>}
+            <Modal
+                open={Boolean(pedidoCobro || solicitudCobro)}
+                title={solicitudCobro ? "Cobro adicional" : "Cobro de pedido"}
+                onClose={() => {
+                    if (guardando) return;
+                    setPedidoCobro(null);
+                    setSolicitudCobro(null);
+                }}
+            >
+                <form onSubmit={confirmarPago} className="space-y-4">
+                    <div>
+                        <p className="text-2xl font-black text-slate-900">
+                            #{pedidoCobro?.id_pedido || solicitudCobro?.id_pedido} · {pedidoCobro?.cliente || solicitudCobro?.cliente}
+                        </p>
+                        {!solicitudCobro && pedidoCobro && (
+                            <div className="mt-3 grid gap-2 rounded-xl bg-slate-50 p-3 text-sm sm:grid-cols-3">
+                                <p>Total: <strong>{importe(pedidoCobro.total)}</strong></p>
+                                <p>Pagos confirmados: <strong>{importe(pedidoCobro.pagado_total)}</strong></p>
+                                <p>Saldo pendiente: <strong>{importe(pedidoCobro.saldo_pendiente)}</strong></p>
+                            </div>
+                        )}
+                        {solicitudCobro && <p className="mt-2 text-sm text-slate-600">Importe adicional solicitado: <strong>{importe(solicitudCobro.total)}</strong></p>}
+                    </div>
+                    {!solicitudCobro && pedidoCobro && (
+                        <section aria-label="Pagos del pedido">
+                            <h3 className="text-sm font-bold text-slate-800">Pagos registrados</h3>
+                            <ul className="mt-2 space-y-2 text-sm text-slate-600">
+                                {pagosPedidoActual.map((pago) => (
+                                    <li key={pago.id_pago} className="flex justify-between gap-3 border-b border-slate-100 pb-2">
+                                        <span>#{pago.id_pago} · {pago.metodo} · {pago.estado}</span>
+                                        <strong>{importe(pago.monto)}</strong>
+                                    </li>
+                                ))}
+                                {!pagosPedidoActual.length && <li className="text-slate-500">Todavía no hay pagos registrados.</li>}
+                            </ul>
+                        </section>
+                    )}
+                    <p className="rounded-xl bg-[#FFF8F2] p-3 text-sm text-slate-800">
+                        Importe por cobrar: <strong>{importe(totalCobroActual)}</strong>
+                    </p>
+                    <Select label="Método de pago" value={metodo} onChange={(event) => setMetodo(event.target.value)}>
+                        {["EFECTIVO", "TARJETA", "TRANSFERENCIA", "QR"].map((opcion) => <option key={opcion}>{opcion}</option>)}
+                    </Select>
+                    <Input
+                        label="Importe recibido (Bs)"
+                        autoFocus
+                        required
+                        type="number"
+                        min={totalCobroActual}
+                        step="0.01"
+                        value={recibido}
+                        onChange={(event) => setRecibido(event.target.value)}
+                    />
+                    <p className="text-sm">Cambio: <strong>{metodo === "EFECTIVO" ? importe(cambio) : importe(0)}</strong></p>
+                    <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                        <Button type="button" variant="secondary" disabled={guardando} onClick={() => { setPedidoCobro(null); setSolicitudCobro(null); }}>Cancelar</Button>
+                        <Button type="submit" variant="success" loading={guardando}>Confirmar pago</Button>
+                    </div>
+                </form>
+            </Modal>
+            <ConfirmModal
+                open={confirmarCierre}
+                title="Confirmar cierre de caja"
+                message={`El cierre registrará ${importe(montoContado)} como efectivo contado. El efectivo esperado es ${importe(panel.saldo_esperado)} y la diferencia estimada es ${importe(Number(montoContado || 0) - Number(panel.saldo_esperado || 0))}. Esta acción cierra el turno diario de Caja.`}
+                confirmText="Confirmar cierre"
+                onCancel={() => { if (!guardando) setConfirmarCierre(false); }}
+                onConfirm={cerrarCaja}
+                loading={guardando}
+            />
+            <ConfirmModal
+                open={Boolean(pedidoParaCancelar)}
+                title="Confirmar cancelación de pedido"
+                message={pedidoParaCancelar
+                    ? `El pedido #${pedidoParaCancelar.id_pedido} de ${pedidoParaCancelar.cliente} se marcará como CANCELADO. La API aplicará las validaciones vigentes antes de cambiar su estado.`
+                    : ""}
+                confirmText="Cancelar pedido"
+                onCancel={() => { if (!guardando) setPedidoParaCancelar(null); }}
+                onConfirm={async () => {
+                    if (await actualizarEstadoPedido(pedidoParaCancelar, "CANCELADO")) setPedidoParaCancelar(null);
+                }}
+                loading={guardando}
+            />
+            <ConfirmModal
+                open={Boolean(pagoAnular)}
+                title="Anular pago"
+                confirmText="Anular pago"
+                message={
+                    <div className="space-y-3">
+                        <p>El pago confirmado de {pagoAnular ? importe(pagoAnular.monto) : ""} dejará de contar para el saldo del pedido. Esta acción quedará registrada y requiere un motivo.</p>
+                        <Textarea
+                            label="Motivo de anulación"
+                            required
+                            value={motivoAnulacion}
+                            onChange={(event) => setMotivoAnulacion(event.target.value)}
+                            rows="3"
+                        />
+                    </div>
+                }
+                onCancel={() => { if (!guardando) setPagoAnular(null); }}
+                onConfirm={anularPago}
+                loading={guardando}
+            />
         </div>
     );
 }

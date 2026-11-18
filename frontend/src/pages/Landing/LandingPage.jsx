@@ -43,12 +43,20 @@ function LandingPage() {
             </div>
           </div>
 
-          <Link
-            to="/reservar-platos"
-            className="rounded-full border border-[#d9bda7] bg-white/80 px-5 py-2.5 text-sm font-semibold text-[#403330] shadow-sm hover:bg-[#fffaf5]"
-          >
-            Reservar platos
-          </Link>
+          <div className="flex items-center gap-2 sm:gap-3">
+            <Link
+              to="/login"
+              className="rounded-full px-3 py-2.5 text-sm font-semibold text-[#403330] hover:bg-white/70 sm:px-5"
+            >
+              Iniciar sesión
+            </Link>
+            <Link
+              to="/reservar-platos"
+              className="rounded-full border border-[#d9bda7] bg-white/80 px-4 py-2.5 text-sm font-semibold text-[#403330] shadow-sm hover:bg-[#fffaf5] sm:px-5"
+            >
+              Reservar platos
+            </Link>
+          </div>
         </nav>
 
         <div className="relative z-10 mx-auto grid max-w-6xl gap-10 px-5 pb-14 pt-8 lg:grid-cols-[1.1fr_0.9fr] lg:items-center lg:px-8 lg:pb-20 lg:pt-12">

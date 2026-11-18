@@ -35,10 +35,35 @@ const assertReady = async (db = pool) => {
         `SELECT to_regclass('public.evento_privado') IS NOT NULL
             AND to_regclass('public.detalle_evento_privado') IS NOT NULL
             AND to_regclass('public.horario_evento_privado') IS NOT NULL
-            AND to_regclass('public.pago_evento') IS NOT NULL AS ready`,
+            AND to_regclass('public.pago_evento') IS NOT NULL
+            AND to_regclass('public.cancelacion_evento_privado') IS NOT NULL AS ready`,
     );
-    if (!rows[0].ready) throw errorHttp("Los eventos privados requieren aplicar la migración local preparada", 503);
+    if (!rows[0].ready) throw errorHttp("Los eventos privados requieren aplicar la migración 009 preparada", 503);
 };
+
+const obtenerSiguienteVersion = async (db, idEvento) => {
+    const { rows } = await db.query(
+        `SELECT COUNT(*)::int + 1 AS version
+         FROM historial_evento_privado
+         WHERE id_evento=$1
+           AND accion IN ('SOLICITUD_PUBLICA','REVISION_ADMIN','RESPUESTA_CLIENTE')`,
+        [idEvento],
+    );
+    return rows[0].version;
+};
+
+const resumenSolicitud = (evento) => ({
+    nombre_responsable: evento.nombre_responsable,
+    celular: evento.celular,
+    correo: evento.correo,
+    tipo_evento: evento.tipo_evento,
+    fecha: String(evento.fecha).slice(0, 10),
+    hora_inicio: String(evento.hora_inicio).slice(0, 5),
+    hora_fin: String(evento.hora_fin).slice(0, 5),
+    invitados: evento.invitados,
+    decoracion: evento.decoracion,
+    observaciones: evento.observaciones,
+});
 
 const normalizarSolicitud = (datos = {}) => {
     const nombre = String(datos.nombre_responsable || "").trim();
@@ -115,6 +140,19 @@ const validarFechaYHorario = async (db, evento) => {
     );
     if (!rows[0].anticipacion_valida) throw errorHttp("Los eventos deben solicitarse con al menos 24 horas de anticipación", 409);
     if (!rows[0].horario_valido) throw errorHttp("El horario solicitado no está habilitado por Administración", 409);
+};
+
+const validarHorarioEstructural = (evento) => {
+    const fecha = String(evento.fecha || "").slice(0, 10);
+    const parsedFecha = new Date(`${fecha}T00:00:00.000Z`);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)
+        || Number.isNaN(parsedFecha.getTime())
+        || parsedFecha.toISOString().slice(0, 10) !== fecha
+        || !/^([01]\d|2[0-3]):[0-5]\d$/.test(String(evento.hora_inicio || "").slice(0, 5))
+        || !/^([01]\d|2[0-3]):[0-5]\d$/.test(String(evento.hora_fin || "").slice(0, 5))
+        || String(evento.hora_inicio).slice(0, 5) >= String(evento.hora_fin).slice(0, 5)) {
+        throw errorHttp("La fecha y el horario del evento no son válidos");
+    }
 };
 
 const validarSinConflicto = async (db, evento, idExcluir = null) => {
@@ -201,7 +239,11 @@ const crear = async (datos = {}) => {
             idEvento: reserva.id_evento,
             accion: "SOLICITUD_PUBLICA",
             nuevo: "PENDIENTE_REVISION",
-            detalle: { ...evento, solicitud_id: solicitudId },
+            detalle: {
+                version: 1,
+                solicitud: { ...evento, solicitud_id: solicitudId },
+                propuesta: null,
+            },
         });
         await client.query("COMMIT");
         return { evento: reserva, acceso: { codigo, token } };
@@ -245,9 +287,9 @@ const obtenerPorAcceso = async (codigo, token) => {
         [codigoAcceso(codigo), tokenHash(token)],
     );
     if (!rows[0]) throw errorHttp("Evento no encontrado o enlace vencido", 404);
-    const [detalle, pagos, historial] = await Promise.all([
+    const [detalle, pagos, historial, cancelaciones] = await Promise.all([
         pool.query(
-            `SELECT preparacion,cantidad_personas,precio_unitario,subtotal,es_adicional
+            `SELECT id_detalle,id_producto,preparacion,cantidad_personas,precio_unitario,subtotal,es_adicional
              FROM detalle_evento_privado WHERE id_evento=$1 ORDER BY id_detalle`,
             [rows[0].id_evento],
         ),
@@ -257,15 +299,45 @@ const obtenerPorAcceso = async (codigo, token) => {
             [rows[0].id_evento],
         ),
         pool.query(
-            `SELECT accion,estado_anterior,estado_nuevo,fecha
+            `SELECT accion,estado_anterior,estado_nuevo,fecha,detalle
              FROM historial_evento_privado WHERE id_evento=$1 ORDER BY fecha,id_historial`,
             [rows[0].id_evento],
         ),
+        pool.query(
+            `SELECT motivo,condiciones_aplicadas,monto_recibido,monto_devuelto,monto_retenido,
+                    metodo_devolucion,referencia_devolucion,estado,creada_en,autorizada_en,devuelta_en
+             FROM cancelacion_evento_privado WHERE id_evento=$1`,
+            [rows[0].id_evento],
+        ),
     ]);
-    return { ...rows[0], detalle: detalle.rows, pagos: pagos.rows, historial: historial.rows };
+    const observacionesAdmin = [...historial.rows]
+        .reverse()
+        .find((item) => item.accion === "REVISION_ADMIN" && item.detalle?.decision === "SOLICITAR_CAMBIOS")
+        ?.detalle?.observaciones_admin || null;
+    const propuestas = historial.rows
+        .filter((item) => Number.isInteger(item.detalle?.version))
+        .map((item) => ({
+            version: item.detalle.version,
+            accion: item.accion,
+            fecha: item.fecha,
+            solicitud: item.detalle.solicitud || null,
+            propuesta: item.detalle.propuesta || null,
+            observaciones_admin: item.detalle.observaciones_admin || null,
+        }));
+    return {
+        ...rows[0],
+        observaciones_admin: observacionesAdmin,
+        detalle: detalle.rows,
+        pagos: pagos.rows,
+        historial: historial.rows.map(({ accion, estado_anterior, estado_nuevo, fecha }) => ({
+            accion, estado_anterior, estado_nuevo, fecha,
+        })),
+        propuestas,
+        cancelacion: cancelaciones.rows[0] || null,
+    };
 };
 
-const cancelarPorAcceso = async (codigo, token) => {
+const cancelarPorAcceso = async (codigo, token, datos = {}) => {
     const client = await pool.connect();
     try {
         await client.query("BEGIN");
@@ -278,6 +350,14 @@ const cancelarPorAcceso = async (codigo, token) => {
             [codigoAcceso(codigo), tokenHash(token)],
         );
         if (!rows[0]) throw errorHttp("Evento no encontrado o enlace vencido", 404);
+        const cancelacionExistente = await client.query(
+            "SELECT id_cancelacion,estado FROM cancelacion_evento_privado WHERE id_evento=$1",
+            [rows[0].id_evento],
+        );
+        if (cancelacionExistente.rowCount) {
+            await client.query("COMMIT");
+            return { id_evento: Number(rows[0].id_evento), estado: "CANCELADO", duplicate: true };
+        }
         if (!["PENDIENTE_REVISION", "REQUIERE_CAMBIOS", "APROBADO_PENDIENTE_ANTICIPO"].includes(rows[0].estado)) {
             throw errorHttp("Este evento ya no puede cancelarse mediante el enlace privado", 409);
         }
@@ -286,6 +366,17 @@ const cancelarPorAcceso = async (codigo, token) => {
             [rows[0].id_evento],
         );
         if (pagosActivos.rowCount) throw errorHttp("La solicitud no se puede cancelar mientras haya pagos pendientes o verificados", 409);
+        const motivo = String(datos.motivo || "Cancelación solicitada por el cliente").trim();
+        if (!motivo || motivo.length > 2000) throw errorHttp("El motivo de cancelación es obligatorio y no debe superar 2000 caracteres");
+        const solicitudId = datos.solicitud_id || crypto.randomUUID();
+        if (!esUuid(solicitudId)) throw errorHttp("El identificador de cancelación no es válido");
+        await client.query(
+            `INSERT INTO cancelacion_evento_privado
+             (id_evento,tipo_responsable,motivo,monto_recibido,monto_devuelto,monto_retenido,
+              estado,solicitud_id)
+             VALUES ($1,'CLIENTE',$2,0,0,0,'SIN_DEVOLUCION',$3)`,
+            [rows[0].id_evento, motivo, solicitudId],
+        );
         await client.query(
             `UPDATE evento_privado SET estado='CANCELADO',actualizado_en=NOW()
              WHERE id_evento=$1`,
@@ -296,9 +387,112 @@ const cancelarPorAcceso = async (codigo, token) => {
             accion: "CANCELACION_CLIENTE",
             anterior: rows[0].estado,
             nuevo: "CANCELADO",
+            detalle: { motivo, monto_recibido: 0, monto_devuelto: 0, monto_retenido: 0 },
         });
+        await client.query(
+            `INSERT INTO bitacora_operaciones (accion,entidad,id_entidad,detalle)
+             VALUES ('CANCELAR','evento_privado',$1,$2::jsonb)`,
+            [String(rows[0].id_evento), JSON.stringify({ origen: "CLIENTE", motivo })],
+        );
         await client.query("COMMIT");
         return { id_evento: Number(rows[0].id_evento), estado: "CANCELADO" };
+    } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+    } finally {
+        client.release();
+    }
+};
+
+const responderSolicitud = async (codigo, token, datos = {}) => {
+    if (!token) throw errorHttp("Se requiere el token privado");
+    const solicitud = normalizarSolicitud(datos);
+    const solicitudId = datos.solicitud_id || crypto.randomUUID();
+    if (!esUuid(solicitudId)) throw errorHttp("El identificador de respuesta no es válido");
+    const client = await pool.connect();
+    try {
+        await client.query("BEGIN");
+        await assertReady(client);
+        const { rows } = await client.query(
+            `SELECT * FROM evento_privado
+             WHERE codigo=$1 AND token_hash=$2 AND token_revocado_en IS NULL
+               AND (token_expira_en IS NULL OR token_expira_en>NOW())
+             FOR UPDATE`,
+            [codigoAcceso(codigo), tokenHash(token)],
+        );
+        if (!rows[0]) throw errorHttp("Evento no encontrado o enlace vencido", 404);
+        const actual = rows[0];
+        const respuestaExistente = await client.query(
+            `SELECT id_historial FROM historial_evento_privado
+             WHERE id_evento=$1 AND accion='RESPUESTA_CLIENTE'
+               AND detalle->>'solicitud_id'=$2 LIMIT 1`,
+            [actual.id_evento, solicitudId],
+        );
+        if (respuestaExistente.rowCount) {
+            await client.query("COMMIT");
+            return { ...(await obtenerPorAcceso(codigo, token)), duplicate: true };
+        }
+        if (actual.estado !== "REQUIERE_CAMBIOS") {
+            throw errorHttp("La solicitud no está esperando una respuesta del cliente", 409);
+        }
+        const pagosActivos = await client.query(
+            "SELECT 1 FROM pago_evento WHERE id_evento=$1 AND estado IN ('PENDIENTE','VERIFICADO') LIMIT 1",
+            [actual.id_evento],
+        );
+        if (pagosActivos.rowCount) {
+            throw errorHttp("No se pueden cambiar los datos mientras exista un pago pendiente o verificado", 409);
+        }
+        await validarFechaYHorario(client, solicitud);
+        const version = await obtenerSiguienteVersion(client, actual.id_evento);
+        const propuestaAnterior = await client.query(
+            `SELECT detalle->'propuesta' AS propuesta
+             FROM historial_evento_privado
+             WHERE id_evento=$1 AND accion='REVISION_ADMIN'
+             ORDER BY fecha DESC,id_historial DESC LIMIT 1`,
+            [actual.id_evento],
+        );
+        await client.query(
+            `UPDATE evento_privado
+             SET nombre_responsable=$1,celular=$2,correo=$3,tipo_evento=$4,fecha=$5,
+                 hora_inicio=$6,hora_fin=$7,invitados=$8,decoracion=$9,observaciones=$10,
+                 estado='PENDIENTE_REVISION',subtotal=0,costos_adicionales=0,total=0,
+                 anticipo_requerido=0,actualizado_en=NOW()
+             WHERE id_evento=$11`,
+            [
+                solicitud.nombre_responsable, solicitud.celular, solicitud.correo,
+                solicitud.tipo_evento, solicitud.fecha, solicitud.hora_inicio,
+                solicitud.hora_fin, solicitud.invitados, solicitud.decoracion,
+                solicitud.observaciones, actual.id_evento,
+            ],
+        );
+        await client.query("DELETE FROM detalle_evento_privado WHERE id_evento=$1", [actual.id_evento]);
+        for (const item of solicitud.detalle) {
+            await client.query(
+                `INSERT INTO detalle_evento_privado
+                 (id_evento,preparacion,cantidad_personas,precio_unitario,subtotal,es_adicional)
+                 VALUES ($1,$2,$3,0,0,FALSE)`,
+                [actual.id_evento, item.preparacion, item.cantidad_personas],
+            );
+        }
+        await registrarHistorial(client, {
+            idEvento: actual.id_evento,
+            accion: "RESPUESTA_CLIENTE",
+            anterior: actual.estado,
+            nuevo: "PENDIENTE_REVISION",
+            detalle: {
+                version,
+                solicitud_id: solicitudId,
+                solicitud: { ...solicitud },
+                propuesta_anterior: propuestaAnterior.rows[0]?.propuesta || null,
+            },
+        });
+        await client.query(
+            `INSERT INTO bitacora_operaciones (accion,entidad,id_entidad,detalle)
+             VALUES ('RESPONDER','evento_privado',$1,$2::jsonb)`,
+            [String(actual.id_evento), JSON.stringify({ origen: "CLIENTE", estado_anterior: actual.estado })],
+        );
+        await client.query("COMMIT");
+        return obtenerPorAcceso(codigo, token);
     } catch (error) {
         await client.query("ROLLBACK");
         throw error;
@@ -414,7 +608,7 @@ const obtenerInterno = async (idEvento) => {
         [idEvento],
     );
     if (!rows[0]) throw errorHttp("Evento no encontrado", 404);
-    const [detalle, pagos, historial] = await Promise.all([
+    const [detalle, pagos, historial, cancelacion] = await Promise.all([
         pool.query("SELECT * FROM detalle_evento_privado WHERE id_evento=$1 ORDER BY id_detalle", [idEvento]),
         pool.query(
             `SELECT p.*,ur.usuario AS registrado_por,uv.usuario AS verificado_por
@@ -425,8 +619,20 @@ const obtenerInterno = async (idEvento) => {
             [idEvento],
         ),
         pool.query("SELECT * FROM historial_evento_privado WHERE id_evento=$1 ORDER BY fecha,id_historial", [idEvento]),
+        pool.query("SELECT * FROM cancelacion_evento_privado WHERE id_evento=$1", [idEvento]),
     ]);
-    return { ...rows[0], detalle: detalle.rows, pagos: pagos.rows, historial: historial.rows };
+    const observacionesAdmin = [...historial.rows]
+        .reverse()
+        .find((item) => item.accion === "REVISION_ADMIN" && item.detalle?.decision === "SOLICITAR_CAMBIOS")
+        ?.detalle?.observaciones_admin || null;
+    return {
+        ...rows[0],
+        observaciones_admin: observacionesAdmin,
+        detalle: detalle.rows,
+        pagos: pagos.rows,
+        historial: historial.rows,
+        cancelacion: cancelacion.rows[0] || null,
+    };
 };
 
 const revisar = async (idEvento, datos = {}, idUsuario) => {
@@ -445,31 +651,81 @@ const revisar = async (idEvento, datos = {}, idUsuario) => {
         if (!["PENDIENTE_REVISION", "REQUIERE_CAMBIOS"].includes(actual.estado)) {
             throw errorHttp("El evento ya no está disponible para revisión", 409);
         }
-        const nota = String(datos.observaciones || "").trim();
-        if (nota.length > 4000) throw errorHttp("El comentario no debe superar 4000 caracteres");
+        const observacionesAdmin = String(datos.observaciones_admin ?? datos.observaciones ?? "").trim();
+        if (observacionesAdmin.length > 4000) throw errorHttp("Las observaciones no deben superar 4000 caracteres");
+        if (accion === "SOLICITAR_CAMBIOS" && !observacionesAdmin) {
+            throw errorHttp("Explica al cliente qué debe corregir");
+        }
+        if (accion === "RECHAZAR" && !observacionesAdmin) {
+            throw errorHttp("Indica el motivo del rechazo");
+        }
+        const condicionesCancelacion = datos.condiciones_cancelacion === undefined
+            ? actual.condiciones_cancelacion
+            : String(datos.condiciones_cancelacion || "").trim() || null;
+        if (condicionesCancelacion && condicionesCancelacion.length > 4000) {
+            throw errorHttp("Las condiciones de cancelación no deben superar 4000 caracteres");
+        }
+        const solicitudActualizada = {
+            ...actual,
+            fecha: datos.fecha === undefined ? String(actual.fecha).slice(0, 10) : String(datos.fecha),
+            hora_inicio: datos.hora_inicio === undefined ? String(actual.hora_inicio).slice(0, 5) : String(datos.hora_inicio),
+            hora_fin: datos.hora_fin === undefined ? String(actual.hora_fin).slice(0, 5) : String(datos.hora_fin),
+        };
+        if (accion !== "RECHAZAR") validarHorarioEstructural(solicitudActualizada);
+        const pagosActivos = await client.query(
+            "SELECT 1 FROM pago_evento WHERE id_evento=$1 AND estado IN ('PENDIENTE','VERIFICADO') LIMIT 1",
+            [idEvento],
+        );
+        if (pagosActivos.rowCount) {
+            throw errorHttp("Resuelve los pagos pendientes antes de cambiar la propuesta", 409);
+        }
+        const detalleAnterior = await client.query(
+            `SELECT id_producto,preparacion,cantidad_personas,precio_unitario,subtotal,es_adicional
+             FROM detalle_evento_privado WHERE id_evento=$1 ORDER BY id_detalle FOR UPDATE`,
+            [idEvento],
+        );
         let nuevo = accion === "APROBAR"
             ? "APROBADO_PENDIENTE_ANTICIPO"
             : accion === "RECHAZAR" ? "RECHAZADO" : "REQUIERE_CAMBIOS";
-        const costosCentavos = dineroCentavos(datos.costos_adicionales || 0, "Los costos adicionales");
-        const anticipoCentavos = dineroCentavos(datos.anticipo_requerido || 0, "El anticipo");
+        const costosCentavos = dineroCentavos(datos.costos_adicionales ?? actual.costos_adicionales ?? 0, "Los costos adicionales");
+        const anticipoCentavos = dineroCentavos(datos.anticipo_requerido ?? actual.anticipo_requerido ?? 0, "El anticipo");
         const costos = costosCentavos / 100;
         const anticipo = anticipoCentavos / 100;
-        const detalle = datos.detalle;
+        let detalle = detalleAnterior.rows.map((item) => ({
+            id_producto: item.id_producto,
+            preparacion: item.preparacion,
+            cantidad_personas: Number(item.cantidad_personas),
+            precio_unitario: Number(item.precio_unitario),
+            subtotal: Number(item.subtotal),
+            es_adicional: item.es_adicional,
+        }));
         if (accion !== "RECHAZAR") {
-            if (!Array.isArray(detalle) || detalle.length === 0) throw errorHttp("Incluye el presupuesto detallado");
+            if (!Array.isArray(datos.detalle) || datos.detalle.length === 0) throw errorHttp("Incluye el presupuesto detallado");
             if (!Number.isFinite(costos) || costos < 0 || !Number.isFinite(anticipo) || anticipo < 0) {
                 throw errorHttp("Los costos y el anticipo deben ser valores no negativos");
             }
-            for (const item of detalle) {
+            detalle = datos.detalle.map((item) => {
                 const precio = Number(item.precio_unitario);
                 const cantidad = Number(item.cantidad_personas);
                 const preparacion = String(item.preparacion || "").trim();
+                const idProducto = item.id_producto === undefined || item.id_producto === null || item.id_producto === ""
+                    ? null
+                    : Number(item.id_producto);
                 if (!preparacion || preparacion.length > 240 || !Number.isInteger(cantidad)
                     || cantidad < 1 || cantidad > 2147483647
-                    || !Number.isFinite(precio) || dineroCentavos(precio, "El precio unitario") < 0) {
+                    || !Number.isFinite(precio) || dineroCentavos(precio, "El precio unitario") < 0
+                    || (idProducto !== null && (!Number.isSafeInteger(idProducto) || idProducto < 1))) {
                     throw errorHttp("El presupuesto contiene preparaciones o importes no válidos");
                 }
-            }
+                return {
+                    id_producto: idProducto,
+                    preparacion,
+                    cantidad_personas: cantidad,
+                    precio_unitario: precio,
+                    subtotal: cantidad * precio,
+                    es_adicional: Boolean(item.es_adicional),
+                };
+            });
             const subtotalCentavos = detalle.reduce(
                 (sum, item) => sum + Number(item.cantidad_personas) * dineroCentavos(item.precio_unitario, "El precio unitario"),
                 0,
@@ -483,60 +739,104 @@ const revisar = async (idEvento, datos = {}, idUsuario) => {
             const total = totalCentavos / 100;
             if (accion === "APROBAR") {
                 if (anticipo === 0) nuevo = "CONFIRMADO";
-                await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`evento:${String(actual.fecha).slice(0, 10)}`]);
-                await validarFechaYHorario(client, actual);
-                await validarSinConflicto(client, actual, idEvento);
+                await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`evento:${solicitudActualizada.fecha}`]);
+                await validarFechaYHorario(client, solicitudActualizada);
+                await validarSinConflicto(client, solicitudActualizada, idEvento);
             }
+            const version = await obtenerSiguienteVersion(client, idEvento);
             await client.query("DELETE FROM detalle_evento_privado WHERE id_evento=$1", [idEvento]);
             for (const item of detalle) {
-                const cantidad = Number(item.cantidad_personas);
-                const precio = Number(item.precio_unitario);
                 await client.query(
                     `INSERT INTO detalle_evento_privado
                      (id_evento,id_producto,preparacion,cantidad_personas,precio_unitario,subtotal,es_adicional)
                      VALUES ($1,$2,$3,$4,$5,$6,$7)`,
                     [
                         idEvento,
-                        item.id_producto || null,
-                        String(item.preparacion).trim(),
-                        cantidad,
-                        precio,
-                        cantidad * precio,
-                        Boolean(item.es_adicional),
+                        item.id_producto,
+                        item.preparacion,
+                        item.cantidad_personas,
+                        item.precio_unitario,
+                        item.subtotal,
+                        item.es_adicional,
                     ],
                 );
             }
             await client.query(
                 `UPDATE evento_privado
                  SET estado=$1,subtotal=$2,costos_adicionales=$3,total=$4,anticipo_requerido=$5,
-                     condiciones_cancelacion=$6,
-                     id_usuario_aprobacion=CASE WHEN $1 IN ('APROBADO_PENDIENTE_ANTICIPO','CONFIRMADO') THEN $7 ELSE id_usuario_aprobacion END,
+                     condiciones_cancelacion=$6,fecha=$7,hora_inicio=$8,hora_fin=$9,
+                     id_usuario_aprobacion=CASE WHEN $1 IN ('APROBADO_PENDIENTE_ANTICIPO','CONFIRMADO') THEN $10 ELSE id_usuario_aprobacion END,
                      aprobado_en=CASE WHEN $1 IN ('APROBADO_PENDIENTE_ANTICIPO','CONFIRMADO') THEN NOW() ELSE aprobado_en END,
                      confirmado_en=CASE WHEN $1='CONFIRMADO' THEN NOW() ELSE confirmado_en END,
                      actualizado_en=NOW()
-                 WHERE id_evento=$8`,
-                [nuevo, subtotal, costos, total, anticipo, nota || null, idUsuario, idEvento],
+                 WHERE id_evento=$11`,
+                [
+                    nuevo, subtotal, costos, total, anticipo,
+                    accion === "APROBAR" ? condicionesCancelacion : actual.condiciones_cancelacion,
+                    solicitudActualizada.fecha, solicitudActualizada.hora_inicio, solicitudActualizada.hora_fin,
+                    idUsuario, idEvento,
+                ],
             );
+            await registrarHistorial(client, {
+                idEvento,
+                idUsuario,
+                accion: "REVISION_ADMIN",
+                anterior: actual.estado,
+                nuevo,
+                detalle: {
+                    version,
+                    decision: accion,
+                    solicitud: resumenSolicitud(solicitudActualizada),
+                    propuesta: {
+                        detalle,
+                        subtotal,
+                        costos_adicionales: costos,
+                        total,
+                        anticipo_requerido: anticipo,
+                        condiciones_cancelacion: accion === "APROBAR"
+                            ? condicionesCancelacion
+                            : actual.condiciones_cancelacion,
+                    },
+                    observaciones_admin: observacionesAdmin || null,
+                },
+            });
         } else {
             await client.query(
                 `UPDATE evento_privado
-                 SET estado='RECHAZADO',condiciones_cancelacion=$1,actualizado_en=NOW()
-                 WHERE id_evento=$2`,
-                [nota || null, idEvento],
+                 SET estado='RECHAZADO',actualizado_en=NOW()
+                 WHERE id_evento=$1`,
+                [idEvento],
             );
+            await registrarHistorial(client, {
+                idEvento,
+                idUsuario,
+                accion: "REVISION_ADMIN",
+                anterior: actual.estado,
+                nuevo,
+                detalle: {
+                    version: await obtenerSiguienteVersion(client, idEvento),
+                    solicitud: resumenSolicitud(actual),
+                    decision: accion,
+                    propuesta: {
+                        detalle: detalleAnterior.rows,
+                        subtotal: Number(actual.subtotal),
+                        costos_adicionales: Number(actual.costos_adicionales),
+                        total: Number(actual.total),
+                        anticipo_requerido: Number(actual.anticipo_requerido),
+                        condiciones_cancelacion: actual.condiciones_cancelacion,
+                    },
+                    observaciones_admin: observacionesAdmin,
+                },
+            });
         }
-        await registrarHistorial(client, {
-            idEvento,
-            idUsuario,
-            accion,
-            anterior: actual.estado,
-            nuevo,
-            detalle: { observaciones: nota, costos_adicionales: costos, anticipo_requerido: anticipo },
-        });
         await client.query(
             `INSERT INTO bitacora_operaciones (id_usuario,accion,entidad,id_entidad,detalle)
              VALUES ($1,$2,'evento_privado',$3,$4::jsonb)`,
-            [idUsuario, accion, String(idEvento), JSON.stringify({ estado_anterior: actual.estado, estado_nuevo: nuevo })],
+            [idUsuario, accion, String(idEvento), JSON.stringify({
+                estado_anterior: actual.estado,
+                estado_nuevo: nuevo,
+                observaciones_admin: observacionesAdmin || null,
+            })],
         );
         await client.query("COMMIT");
         return obtenerInterno(idEvento);
@@ -640,6 +940,204 @@ const verificarPago = async (idPago, idUsuario, aprobado, observaciones = "") =>
         return { id_pago_evento: Number(idPago), estado: nuevoEstadoPago, estado_evento: nuevoEstadoEvento, id_caja: idCaja };
     } catch (error) {
         await client.query("ROLLBACK");
+        throw error;
+    } finally {
+        client.release();
+    }
+};
+
+const cancelarAdministrativamente = async (idEvento, datos = {}, idUsuario) => {
+    idEvento = validarId(idEvento, "evento");
+    const solicitudId = datos.solicitud_id || crypto.randomUUID();
+    if (!esUuid(solicitudId)) throw errorHttp("El identificador de cancelación no es válido");
+    const motivo = String(datos.motivo || "").trim();
+    const condiciones = String(datos.condiciones_aplicadas || "").trim();
+    if (!motivo || motivo.length > 2000) throw errorHttp("Indica el motivo de cancelación (máximo 2000 caracteres)");
+    if (!condiciones || condiciones.length > 4000) {
+        throw errorHttp("Registra las condiciones de cancelación acordadas para este evento");
+    }
+    const montoDevueltoCentavos = dineroCentavos(datos.monto_devuelto, "El monto devuelto");
+    const montoRetenidoCentavos = dineroCentavos(datos.monto_retenido, "El monto retenido");
+    const metodo = String(datos.metodo_devolucion || "").trim().toUpperCase() || null;
+    if (montoDevueltoCentavos > 0 && !["EFECTIVO", "TRANSFERENCIA", "TARJETA", "QR"].includes(metodo)) {
+        throw errorHttp("Selecciona el método de devolución acordado");
+    }
+    const client = await pool.connect();
+    try {
+        await client.query("BEGIN");
+        await assertReady(client);
+        const { rows } = await client.query(
+            "SELECT * FROM evento_privado WHERE id_evento=$1 FOR UPDATE",
+            [idEvento],
+        );
+        if (!rows[0]) throw errorHttp("Evento no encontrado", 404);
+        const actual = rows[0];
+        const cancelacionExistente = await client.query(
+            "SELECT * FROM cancelacion_evento_privado WHERE id_evento=$1 FOR UPDATE",
+            [idEvento],
+        );
+        if (cancelacionExistente.rowCount) {
+            if (cancelacionExistente.rows[0].solicitud_id === solicitudId) {
+                await client.query("COMMIT");
+                return { ...cancelacionExistente.rows[0], duplicate: true };
+            }
+            throw errorHttp("La cancelación de este evento ya fue registrada", 409);
+        }
+        if (!["PENDIENTE_REVISION", "REQUIERE_CAMBIOS", "APROBADO_PENDIENTE_ANTICIPO", "CONFIRMADO"].includes(actual.estado)) {
+            throw errorHttp("El evento no se puede cancelar en su estado actual", 409);
+        }
+        const pagosPendientes = await client.query(
+            "SELECT 1 FROM pago_evento WHERE id_evento=$1 AND estado='PENDIENTE' LIMIT 1",
+            [idEvento],
+        );
+        if (pagosPendientes.rowCount) throw errorHttp("Resuelve los pagos pendientes antes de cancelar el evento", 409);
+        const pagosVerificados = await client.query(
+            "SELECT COALESCE(SUM(importe),0) AS total FROM pago_evento WHERE id_evento=$1 AND estado='VERIFICADO'",
+            [idEvento],
+        );
+        const recibidoCentavos = dineroCentavos(pagosVerificados.rows[0].total, "El monto recibido");
+        if (montoDevueltoCentavos + montoRetenidoCentavos !== recibidoCentavos) {
+            throw errorHttp("El monto devuelto y retenido debe coincidir con los pagos verificados");
+        }
+        const montoRecibido = recibidoCentavos / 100;
+        const montoDevuelto = montoDevueltoCentavos / 100;
+        const montoRetenido = montoRetenidoCentavos / 100;
+        const estado = montoDevuelto > 0 ? "AUTORIZADA" : "SIN_DEVOLUCION";
+        const inserted = await client.query(
+            `INSERT INTO cancelacion_evento_privado
+             (id_evento,tipo_responsable,id_usuario_responsable,motivo,condiciones_aplicadas,
+              monto_recibido,monto_devuelto,monto_retenido,metodo_devolucion,estado,solicitud_id,
+              id_usuario_autorizacion,autorizada_en)
+             VALUES ($1,'USUARIO',$2,$3,$4,$5,$6,$7,$8,$9,$10,
+                     CASE WHEN $9='AUTORIZADA' THEN $2 ELSE NULL END,
+                     CASE WHEN $9='AUTORIZADA' THEN NOW() ELSE NULL END)
+             RETURNING *`,
+            [
+                idEvento, idUsuario, motivo, condiciones, montoRecibido,
+                montoDevuelto, montoRetenido, montoDevuelto > 0 ? metodo : null, estado, solicitudId,
+            ],
+        );
+        await client.query(
+            "UPDATE evento_privado SET estado='CANCELADO',actualizado_en=NOW() WHERE id_evento=$1",
+            [idEvento],
+        );
+        await registrarHistorial(client, {
+            idEvento,
+            idUsuario,
+            accion: "CANCELACION_ADMIN",
+            anterior: actual.estado,
+            nuevo: "CANCELADO",
+            detalle: {
+                motivo,
+                condiciones_aplicadas: condiciones,
+                monto_recibido: montoRecibido,
+                monto_devuelto: montoDevuelto,
+                monto_retenido: montoRetenido,
+                estado_devolucion: estado,
+            },
+        });
+        await client.query(
+            `INSERT INTO bitacora_operaciones (id_usuario,accion,entidad,id_entidad,detalle)
+             VALUES ($1,'CANCELAR','evento_privado',$2,$3::jsonb)`,
+            [idUsuario, String(idEvento), JSON.stringify({ motivo, estado_devolucion: estado })],
+        );
+        await client.query("COMMIT");
+        return inserted.rows[0];
+    } catch (error) {
+        await client.query("ROLLBACK");
+        if (error.code === "23505" && error.constraint === "cancelacion_evento_privado_solicitud_id_key") {
+            throw errorHttp("El identificador de cancelación ya fue utilizado", 409);
+        }
+        throw error;
+    } finally {
+        client.release();
+    }
+};
+
+const registrarDevolucion = async (idEvento, datos = {}, idUsuario) => {
+    idEvento = validarId(idEvento, "evento");
+    const solicitudId = datos.solicitud_id || crypto.randomUUID();
+    const referencia = String(datos.referencia_devolucion || "").trim();
+    if (!esUuid(solicitudId)) throw errorHttp("El identificador de devolución no es válido");
+    if (!referencia || referencia.length > 500) {
+        throw errorHttp("Registra la referencia o comprobante de la devolución (máximo 500 caracteres)");
+    }
+    const client = await pool.connect();
+    try {
+        await client.query("BEGIN");
+        await assertReady(client);
+        const { rows } = await client.query(
+            "SELECT * FROM cancelacion_evento_privado WHERE id_evento=$1 FOR UPDATE",
+            [idEvento],
+        );
+        if (!rows[0]) throw errorHttp("No existe una cancelación registrada para este evento", 404);
+        const cancelacion = rows[0];
+        if (cancelacion.estado === "DEVUELTA") {
+            if (cancelacion.solicitud_devolucion_id === solicitudId) {
+                await client.query("COMMIT");
+                return { ...cancelacion, duplicate: true };
+            }
+            throw errorHttp("La devolución ya fue registrada", 409);
+        }
+        if (cancelacion.estado !== "AUTORIZADA") {
+            throw errorHttp("No existe una devolución autorizada para completar", 409);
+        }
+        let idCaja = null;
+        if (cancelacion.metodo_devolucion === "EFECTIVO") {
+            await operacionesModel.verificarCajaAbierta(client);
+            const saldoCaja = await client.query(
+                "SELECT COALESCE(SUM(ingreso-egreso),0) AS total FROM caja WHERE fecha::date=CURRENT_DATE",
+            );
+            const caja = await client.query(
+                `INSERT INTO caja (fecha,concepto,ingreso,egreso,saldo,id_usuario)
+                 VALUES (NOW(),$1,0,$2,$3,$4) RETURNING id_caja`,
+                [
+                    `Devolución evento #${idEvento}`,
+                    cancelacion.monto_devuelto,
+                    Number(saldoCaja.rows[0].total) - Number(cancelacion.monto_devuelto),
+                    idUsuario,
+                ],
+            );
+            idCaja = caja.rows[0].id_caja;
+        }
+        const updated = await client.query(
+            `UPDATE cancelacion_evento_privado
+             SET estado='DEVUELTA',referencia_devolucion=$1,solicitud_devolucion_id=$2,
+                 id_usuario_devolucion=$3,devuelta_en=NOW(),id_caja=$4
+             WHERE id_cancelacion=$5
+             RETURNING *`,
+            [referencia, solicitudId, idUsuario, idCaja, cancelacion.id_cancelacion],
+        );
+        await registrarHistorial(client, {
+            idEvento,
+            idUsuario,
+            accion: "DEVOLUCION_REGISTRADA",
+            anterior: "CANCELADO",
+            nuevo: "CANCELADO",
+            detalle: {
+                monto_devuelto: Number(cancelacion.monto_devuelto),
+                metodo_devolucion: cancelacion.metodo_devolucion,
+                referencia_devolucion: referencia,
+                id_caja: idCaja,
+            },
+        });
+        await client.query(
+            `INSERT INTO bitacora_operaciones (id_usuario,accion,entidad,id_entidad,detalle)
+             VALUES ($1,'DEVOLVER','evento_privado',$2,$3::jsonb)`,
+            [idUsuario, String(idEvento), JSON.stringify({
+                monto_devuelto: Number(cancelacion.monto_devuelto),
+                metodo_devolucion: cancelacion.metodo_devolucion,
+                referencia_devolucion: referencia,
+                id_caja: idCaja,
+            })],
+        );
+        await client.query("COMMIT");
+        return updated.rows[0];
+    } catch (error) {
+        await client.query("ROLLBACK");
+        if (error.code === "23505" && error.constraint === "cancelacion_evento_privado_solicitud_devolucion_id_key") {
+            throw errorHttp("El identificador de devolución ya fue utilizado", 409);
+        }
         throw error;
     } finally {
         client.release();
@@ -771,11 +1269,14 @@ export default {
     crear,
     obtenerPorAcceso,
     cancelarPorAcceso,
+    responderSolicitud,
     registrarPago,
     listar,
     obtenerInterno,
     revisar,
     verificarPago,
+    cancelarAdministrativamente,
+    registrarDevolucion,
     registrarImpresion,
     listarHorarios,
     actualizarHorarios,

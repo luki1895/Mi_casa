@@ -1,15 +1,18 @@
-const errorMiddleware=(err,req,res,next)=>{
+import { esErrorConexion, mensajeErrorConexion } from "../utils/databaseError.js";
 
-console.error(err);
+const errorMiddleware = (error, _req, res, _next) => {
+    if (esErrorConexion(error)) {
+        return res.status(503).json({
+            ok: false,
+            mensaje: mensajeErrorConexion(error),
+        });
+    }
 
-return res.status(500).json({
-
-ok:false,
-
-mensaje:"Error interno del servidor"
-
-});
-
+    console.error(error);
+    return res.status(500).json({
+        ok: false,
+        mensaje: "Error interno del servidor",
+    });
 };
 
 export default errorMiddleware;

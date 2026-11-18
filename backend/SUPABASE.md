@@ -29,9 +29,25 @@ Si la conexión está bien, responde `Conexión OK`. En Vercel, comprueba tambi�
 
 ## Migraciones y datos
 
-La versión actual incluye `src/migrations/005_integral_completion.sql`, requerida por las funciones de productos, saldos de pensionados, historial de reservas, anulación de pagos y comandas. Esta migración no se ejecutó durante el desarrollo. Valida su compatibilidad en una base de pruebas y prepara un respaldo antes de aplicar cambios a una base existente.
+El ejecutor no migra al iniciar el backend. `npm run migrate` requiere un subcomando:
 
-No ejecutes `npm run migrate`, `npm run restore:data` ni `npm run db:align-sequences` sobre producción sin revisión previa. Para una base nueva, crea primero el proyecto Supabase, configura su `DATABASE_URL`, prueba con `npm run db:ping` y ejecuta las migraciones solo cuando hayas confirmado que apuntas a la base correcta. No reutilices conexiones ni secretos antiguos.
+```bash
+npm run migrate -- status
+npm run migrate -- deps 005_integral_completion.sql
+npm run migrate -- run 005_integral_completion.sql --confirm <sha256>
+```
+
+`status` y `deps` consultan la base en una transacción de solo lectura y muestran los checksums local y registrado. `run` exige un archivo concreto, checksum de confirmación exacto, dependencias satisfechas y que sea la siguiente migración aplicable. Aplica solo ese archivo, bajo bloqueo asesor transaccional, y registra el checksum en la misma transacción. No hay comando para aplicar todas las migraciones. Las migraciones 003 y 004 son manuales y el ejecutor las bloquea.
+
+El estado remoto consultado previamente indicó un checksum distinto para 000. El ejecutor debe detenerse ante esa discrepancia; no edites 000, no alteres `schema_migrations` y no ejecutes SQL manual para saltarte la validación. 004 también requiere revisión: su SQL local está incompleto. La migración 009 depende de 008 y su archivo debe estar incluido en el commit de código que se vaya a usar.
+
+La configuración persistente de mesas requiere `006_mesas_atenciones.sql` y la nueva migración aditiva `010_configuracion_mesas.sql`. La 010 crea sectores y agrega asignación, orden y habilitación a `mesa`; no inserta mesas ni modifica registros históricos. No la ejecutes hasta que `status` y `deps` confirmen el historial, checksum y orden aplicable; la discrepancia conocida de 000 mantiene bloqueadas las migraciones hasta su reconciliación formal.
+
+Para resolver el checksum de 000, recupera el archivo exacto del artefacto o revisión usada al aplicarlo y verifica que el SHA-256 calculado por el ejecutor coincida con el registro remoto. Traslada cualquier cambio posterior a una migración nueva, después de revisar sus efectos. Si el original no puede recuperarse, mantén bloqueada la ejecución y solicita una reconciliación de esquema formal y aprobada; no agregues excepciones que acepten un checksum distinto.
+
+Antes de una migración de producción: verifica el proyecto destino y un respaldo completo; revisa `status`, las dependencias y el checksum; ejecuta una migración por vez desde un job de CI/manual protegido con las variables de producción. No agregues un endpoint público de migraciones ni ejecutes `npm run migrate`, `npm run restore:data` o `npm run db:align-sequences` sin este control. El dump de esquema no es respaldo de datos.
+
+Para una base nueva, configura sus variables de forma segura, prueba `npm run db:ping` y aplica 000 individualmente antes de migraciones dependientes. 000 contiene datos semilla; no la ejecutes contra una base existente sin comprobar antes el historial y el respaldo.
 
 ## pgAdmin
 

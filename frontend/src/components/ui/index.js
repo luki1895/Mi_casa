@@ -9,3 +9,7 @@ export { default as Badge } from "./Badge";
 export { default as Table } from "./Table";
 
 export { default as Modal } from "./Modal";
+export { default as Select } from "./Select";
+export { default as Alert } from "./Alert";
+export { default as ConfirmModal } from "./ConfirmModal";
+export { default as Textarea } from "./Textarea";

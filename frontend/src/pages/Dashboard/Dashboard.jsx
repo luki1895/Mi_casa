@@ -1,13 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import api from "../../api/axios";
-
-const estadoColors = {
-    ENTREGADO: "bg-emerald-100 text-emerald-700",
-    LISTO: "bg-emerald-100 text-emerald-700",
-    EN_PREPARACION: "bg-amber-100 text-amber-700",
-    PENDIENTE: "bg-rose-100 text-rose-700",
-};
+import { Alert, Badge, Card } from "../../components/ui";
 
 const indicadores = [
     { id: "ventas", titulo: "Ventas cobradas", valor: (resumen) => `Bs ${Number(resumen?.ventas?.total || 0).toFixed(2)}`, icono: "Bs", tone: "bg-emerald-50 text-emerald-700" },
@@ -63,11 +57,11 @@ function Dashboard() {
                 </div>
             </header>
 
-            {error && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">{error}</p>}
+            {error && <Alert type="error">{error}</Alert>}
 
             <section aria-label="Indicadores del día" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                 {indicadores.map((item) => (
-                    <article key={item.id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                    <Card key={item.id} className="border-slate-200">
                         <div className="flex items-start justify-between gap-3">
                             <div>
                                 <p className="text-sm font-medium text-slate-500">{item.titulo}</p>
@@ -75,7 +69,7 @@ function Dashboard() {
                             </div>
                             <span aria-hidden="true" className={`flex h-11 min-w-11 items-center justify-center rounded-xl px-2 text-sm font-black ${item.tone}`}>{item.icono}</span>
                         </div>
-                    </article>
+                    </Card>
                 ))}
             </section>
 
@@ -122,7 +116,11 @@ function Dashboard() {
                                         <td className="whitespace-nowrap px-4 py-3">{new Date(pedido.fecha).toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" })}</td>
                                         <td className="px-4 py-3 font-medium">{pedido.cliente}</td>
                                         <td className="px-4 py-3">
-                                            <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${estadoColors[pedido.estado] || "bg-slate-100 text-slate-700"}`}>{String(pedido.estado).replaceAll("_", " ")}</span>
+                                            <Badge
+                                                variant={pedido.estado === "PENDIENTE" ? "danger" : pedido.estado === "EN_PREPARACION" ? "warning" : "success"}
+                                            >
+                                                {String(pedido.estado).replaceAll("_", " ")}
+                                            </Badge>
                                         </td>
                                         <td className="whitespace-nowrap px-4 py-3 text-right font-bold text-slate-900">Bs {Number(pedido.total || 0).toFixed(2)}</td>
                                     </tr>

@@ -23,6 +23,34 @@ test("autoriza un rol equivalente después de normalizarlo", () => {
     assert.equal(continuado, true);
 });
 
+test("autoriza Caja para operaciones compartidas de Caja y Administración", () => {
+    let continuado = false;
+    const req = { usuario: { rol: "Cajero" } };
+    const res = { status() { throw new Error("No se esperaba denegación"); } };
+
+    autorizarRoles("admin", "caja")(req, res, () => { continuado = true; });
+
+    assert.equal(continuado, true);
+});
+
+test("deniega reservas internas a un rol distinto de Caja o Administración", () => {
+    let status;
+    const req = { usuario: { rol: "Mesera" } };
+    const res = {
+        status(valor) {
+            status = valor;
+            return this;
+        },
+        json() {},
+    };
+
+    autorizarRoles("admin", "caja")(req, res, () => {
+        throw new Error("No se esperaba autorizar a la mesera");
+    });
+
+    assert.equal(status, 403);
+});
+
 test("responde 403 si el usuario autenticado no tiene el rol permitido", () => {
     let status;
     let cuerpo;

@@ -1,137 +1,152 @@
 import "dotenv/config";
-import { createHash } from "node:crypto";
-import { readdir, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import pool from "./config/db.js";
+import {
+    executeSingleMigration,
+    getHistoryIssues,
+    getMigrationStatuses,
+    loadMigrationFiles,
+    parseMigrationCommand,
+    readMigrationState,
+} from "./migration-runner.js";
 
 const migrationDir = fileURLToPath(new URL("./migrations", import.meta.url));
-const applicationTables = [
-    "persona",
-    "cliente",
-    "usuario",
-    "producto",
-    "configuracion",
-    "produccion_diaria",
-    "pedido",
-    "detalle_pedido",
-    "gasto",
-    "caja",
-    "apertura_caja",
-    "cierre_caja",
-    "reserva",
-    "mesa",
-    "atencion_mesa",
-    "reserva_plato",
-    "pago",
-    "solicitud_adicional",
-    "bitacora_operaciones",
-];
-const manualOnlyMigrations = new Set([
-    "003_restaurar_usuarios_prueba.sql",
-    "004_maria_prueba_como_mesera.sql",
-]);
 
-try {
-    const connectionClient = await pool.connect();
-    const tlsEnabled = connectionClient.connection.stream.encrypted === true;
-    connectionClient.release();
+const usage = `Uso:
+  npm run migrate -- status
+  npm run migrate -- deps <archivo.sql>
+  npm run migrate -- run <archivo.sql> --confirm <sha256>
 
-    if (!tlsEnabled) {
+No existe una opción para ejecutar todas las migraciones.
+003 y 004 son manuales y están bloqueadas por este ejecutor.`;
+
+const assertTls = (client) => {
+    if (client.connection.stream.encrypted !== true) {
         throw new Error("La conexión PostgreSQL no usa TLS; no se ejecutarán migraciones.");
     }
+};
 
-    const files = (await readdir(migrationDir))
-        .filter((file) => file.endsWith(".sql"))
-        .sort();
-
-    for (const file of files.filter((name) => manualOnlyMigrations.has(name))) {
-        console.warn(`Se omite la migración manual/de prueba ${file}.`);
-    }
-
-    const migrationFiles = files.filter((file) => !manualOnlyMigrations.has(file));
-    const { rows: [migrationTable] } = await pool.query(
-        "SELECT to_regclass('public.schema_migrations') IS NOT NULL AS migration_table_exists",
-    );
-    const { rows: existingTables } = await pool.query(
-        `SELECT table_name
-         FROM information_schema.tables
-         WHERE table_schema = 'public'
-           AND table_type = 'BASE TABLE'
-           AND table_name = ANY($1::text[])`,
-        [applicationTables],
-    );
-
-    if (!migrationTable.migration_table_exists && existingTables.length > 0) {
-        throw new Error(
-            "Ya existe un esquema de Mi Casa sin historial de migraciones. "
-            + "No se aplicará ningún SQL automáticamente; verifica el respaldo y el esquema primero.",
+const printStatus = (migrations, appliedByName) => {
+    const statuses = getMigrationStatuses(migrations, appliedByName);
+    console.log("ESTADO | MIGRACIÓN | CHECKSUM CALCULADO | CHECKSUM REGISTRADO");
+    for (const migration of statuses) {
+        console.log(
+            `${migration.status} | ${migration.filename} | ${migration.checksum} | `
+            + `${migration.recordedChecksum || "-"}`,
         );
     }
+};
 
-    await pool.query(`
-        CREATE TABLE IF NOT EXISTS public.schema_migrations (
-            name TEXT PRIMARY KEY,
-            checksum TEXT NOT NULL,
-            applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        )
-    `);
-
-    const { rows: appliedMigrations } = await pool.query(
-        "SELECT name, checksum FROM public.schema_migrations",
-    );
-    const appliedByName = new Map(appliedMigrations.map(({ name, checksum }) => [name, checksum]));
-
-    if (appliedMigrations.length === 0 && existingTables.length > 0) {
-        throw new Error(
-            "El esquema de Mi Casa existe, pero el historial de migraciones está vacío. "
-            + "No se ejecutarán migraciones para evitar modificar datos existentes.",
-        );
-    }
-
-    for (const file of migrationFiles) {
-        const filePath = fileURLToPath(new URL(`./migrations/${file}`, import.meta.url));
-        const sql = await readFile(filePath, "utf8");
-        const checksum = createHash("sha256").update(sql).digest("hex");
-        const previousChecksum = appliedByName.get(file);
-
-        if (previousChecksum) {
-            if (previousChecksum !== checksum) {
-                throw new Error(
-                    `La migración ${file} cambió después de aplicarse. `
-                    + "Crea una migración nueva en lugar de modificar una ya aplicada.",
-                );
+const withReadOnlyState = async (pool, callback) => {
+    const client = await pool.connect();
+    let transactionOpen = false;
+    try {
+        assertTls(client);
+        await client.query("BEGIN READ ONLY");
+        transactionOpen = true;
+        const state = await readMigrationState(client);
+        await client.query("COMMIT");
+        transactionOpen = false;
+        return await callback(state);
+    } catch (error) {
+        if (transactionOpen) {
+            try {
+                await client.query("ROLLBACK");
+            } catch (rollbackError) {
+                console.error("No se pudo cerrar la transacción de lectura:", rollbackError.message);
             }
-            continue;
+        }
+        throw error;
+    } finally {
+        client.release();
+    }
+};
+
+async function main() {
+    let pool;
+    try {
+        const command = parseMigrationCommand(process.argv.slice(2));
+        if (command.command === "help") {
+            console.log(usage);
+            return;
+        }
+
+        const migrations = await loadMigrationFiles(migrationDir);
+        if (
+            command.filename
+            && !migrations.some(({ filename }) => filename === command.filename)
+        ) {
+            throw new Error(`Migración desconocida: ${command.filename}.`);
+        }
+
+        const { default: databasePool } = await import("./config/db.js");
+        pool = databasePool;
+
+        if (command.command === "status") {
+            await withReadOnlyState(pool, (state) => {
+                console.log(
+                    `Historial: ${state.historyExists ? "presente" : "ausente"}; `
+                    + `tablas de aplicación detectadas: ${state.existingTables.length}.`,
+                );
+                printStatus(migrations, state.appliedByName);
+                const issues = getHistoryIssues(migrations, state.appliedByName);
+                if (issues.length) {
+                    throw new Error(issues.join("\n"));
+                }
+            });
+            return;
+        }
+
+        if (command.command === "deps") {
+            await withReadOnlyState(pool, (state) => {
+                const migration = migrations.find(
+                    ({ filename }) => filename === command.filename,
+                );
+                console.log(`Migración: ${migration.filename}`);
+                console.log(
+                    `Dependencias: ${migration.dependencies === null
+                        ? "no verificadas"
+                        : migration.dependencies.join(", ") || "ninguna"}`,
+                );
+                console.log(`Checksum calculado: ${migration.checksum}`);
+                console.log(
+                    `Checksum registrado: ${state.appliedByName.get(migration.filename) || "-"}`,
+                );
+                console.log(
+                    `Tipo: ${migration.manualOnly ? "manual; bloqueada" : "ejecutable individualmente"}`,
+                );
+                const issues = getHistoryIssues(migrations, state.appliedByName);
+                if (issues.length) {
+                    throw new Error(issues.join("\n"));
+                }
+            });
+            return;
         }
 
         const client = await pool.connect();
         try {
-            await client.query("BEGIN");
-            const sqlSinTransaccionExterna = sql
-                .replace(/^\s*BEGIN\s*;/i, "")
-                .replace(/;\s*COMMIT\s*;\s*$/i, ";");
-            await client.query(sqlSinTransaccionExterna);
-            await client.query(
-                "INSERT INTO public.schema_migrations (name, checksum) VALUES ($1, $2)",
-                [file, checksum],
+            assertTls(client);
+            const result = await executeSingleMigration({
+                client,
+                migrations,
+                targetFilename: command.filename,
+                confirmationChecksum: command.confirmationChecksum,
+            });
+            console.log(
+                result.status === "applied"
+                    ? `Migración ${result.migration.filename} aplicada.`
+                    : `Migración ${result.migration.filename} ya estaba aplicada sin discrepancias.`,
             );
-            await client.query("COMMIT");
-            appliedByName.set(file, checksum);
-            console.log(`Migración ${file} aplicada correctamente.`);
-        } catch (error) {
-            try {
-                await client.query("ROLLBACK");
-            } catch (rollbackError) {
-                console.error("No se pudo revertir la migración:", rollbackError.message);
-            }
-            throw error;
         } finally {
             client.release();
         }
+    } catch (error) {
+        console.error("No se pudo gestionar la migración:", error.message);
+        process.exitCode = 1;
+    } finally {
+        if (pool) {
+            await pool.end();
+        }
     }
-} catch (error) {
-    console.error("No se pudo aplicar la migración:", error.message);
-    process.exitCode = 1;
-} finally {
-    await pool.end();
 }
+
+await main();

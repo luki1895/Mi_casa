@@ -1,15 +1,11 @@
-function ErrorMessage({mensaje}){
+import Alert from "../ui/Alert";
 
-return(
-
-<div className="bg-red-100 border border-red-300 text-red-700 rounded-lg p-4">
-
-{mensaje}
-
-</div>
-
-);
-
+function ErrorMessage({ mensaje, children, onRetry }) {
+  return (
+    <Alert type="error" onRetry={onRetry}>
+      {mensaje || children}
+    </Alert>
+  );
 }
 
 export default ErrorMessage;

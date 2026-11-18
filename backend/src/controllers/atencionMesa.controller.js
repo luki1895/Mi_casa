@@ -1,10 +1,26 @@
 import atencionMesaService from "../services/atencionMesa.service.js";
 import response from "../utils/response.js";
+import { esErrorConexion, mensajeErrorConexion } from "../utils/databaseError.js";
 
-const manejarError = (res, error) => response.error(res, error.message, error.status || 500);
+const manejarError = (res, error) => {
+    if (error.status) return response.error(res, error.message, error.status);
+    if (esErrorConexion(error)) {
+        return response.error(res, mensajeErrorConexion(error), 503);
+    }
+    if (["42P01", "42703"].includes(error.code)) {
+        return response.error(res, "El esquema de mesas no está actualizado. Revisa las migraciones 006_mesas_atenciones.sql, 010_configuracion_mesas.sql y 011_distribucion_plano_mesas.sql.", 503);
+    }
+    console.error("Error en el módulo de mesas:", error);
+    return response.error(res, "Error interno del servidor al gestionar mesas y atenciones.", 500);
+};
 
 export const listarMesas = async (_req, res) => {
     try { response.ok(res, await atencionMesaService.listarMesas()); }
+    catch (error) { manejarError(res, error); }
+};
+
+export const listarMesasConfiguracion = async (_req, res) => {
+    try { response.ok(res, await atencionMesaService.listarMesasConfiguracion()); }
     catch (error) { manejarError(res, error); }
 };
 
@@ -15,6 +31,26 @@ export const crearMesa = async (req, res) => {
 
 export const actualizarMesa = async (req, res) => {
     try { response.ok(res, await atencionMesaService.actualizarMesa(req.params.id, req.body)); }
+    catch (error) { manejarError(res, error); }
+};
+
+export const listarSectores = async (_req, res) => {
+    try { response.ok(res, await atencionMesaService.listarSectores()); }
+    catch (error) { manejarError(res, error); }
+};
+
+export const crearSector = async (req, res) => {
+    try { response.ok(res, await atencionMesaService.crearSector(req.body), "Sector registrado", 201); }
+    catch (error) { manejarError(res, error); }
+};
+
+export const actualizarSector = async (req, res) => {
+    try { response.ok(res, await atencionMesaService.actualizarSector(req.params.id, req.body)); }
+    catch (error) { manejarError(res, error); }
+};
+
+export const guardarDistribucion = async (req, res) => {
+    try { response.ok(res, await atencionMesaService.guardarDistribucion(req.body?.mesas), "Distribución guardada"); }
     catch (error) { manejarError(res, error); }
 };
 
