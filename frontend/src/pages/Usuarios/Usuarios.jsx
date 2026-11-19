@@ -129,6 +129,7 @@ function Usuarios() {
     if (!texto) return usuarios;
     return usuarios.filter((usuario) => `${usuario.usuario || ""} ${usuario.rol || ""}`.toLowerCase().includes(texto));
   }, [usuarios, busqueda]);
+  const cuentaLegada = edicion?.rol === "empleado";
 
   return (
     <div className="space-y-6">
@@ -174,10 +175,12 @@ function Usuarios() {
                 <input type="password" minLength="6" required={!edicion} value={formulario.password} onChange={(event) => setFormulario({ ...formulario, password: event.target.value })} placeholder={edicion ? "Dejar vacío para conservar la actual" : "Ingrese la contraseña"} className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 p-3" />
               </label>
               <label className="block text-sm font-semibold text-slate-700">Rol
-                <select value={formulario.rol} onChange={(event) => setFormulario({ ...formulario, rol: event.target.value })} className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <select value={formulario.rol} disabled={cuentaLegada} onChange={(event) => setFormulario({ ...formulario, rol: event.target.value })} className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 p-3 disabled:cursor-not-allowed disabled:opacity-70">
+                  {cuentaLegada && <option value="empleado">empleado — legado, sin permisos</option>}
                   {roles.map((rol) => <option key={rol} value={rol}>{rol}</option>)}
                 </select>
               </label>
+              {cuentaLegada && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Cuenta histórica conservada. Su rol está bloqueado durante esta etapa y no concede permisos funcionales.</p>}
               <label className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
                 <input type="checkbox" checked={Boolean(formulario.estado)} onChange={(event) => setFormulario({ ...formulario, estado: event.target.checked })} className="h-4 w-4" />
                 Usuario activo
@@ -203,16 +206,21 @@ function Usuarios() {
                   : usuariosFiltrados.length === 0 ? <tr><td colSpan="5" className="px-4 py-6 text-center text-gray-500">Sin coincidencias</td></tr>
                     : usuariosFiltrados.map((usuario) => {
                       const activo = usuario.estado !== false && String(usuario.estado).toUpperCase() !== "INACTIVO";
+                      const noPuedeReactivar = usuario.rol === "empleado" && !activo;
                       return (
                         <tr key={usuario.id_usuario}>
                           <td className="px-4 py-3 font-medium text-slate-800">{usuario.usuario}</td>
-                          <td className="px-4 py-3 capitalize text-slate-700">{usuario.rol}</td>
+                          <td className="px-4 py-3 capitalize text-slate-700">
+                            {usuario.rol === "empleado"
+                              ? <span className="inline-flex items-center gap-2">empleado <span className="rounded-full bg-amber-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-amber-900">Legado · sin permisos</span></span>
+                              : usuario.rol}
+                          </td>
                           <td className="px-4 py-3"><span className={`rounded-full px-2 py-1 text-xs font-semibold ${activo ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>{activo ? "Activo" : "Inactivo"}</span></td>
                           <td className="px-4 py-3 text-slate-600">{usuario.id_usuario}</td>
                           <td className="px-4 py-3">
                             <div className="flex flex-wrap gap-2">
                               <button type="button" onClick={() => resetFormulario(usuario)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold">Editar</button>
-                              <button type="button" onClick={() => cambiarEstadoUsuario(usuario)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold disabled:opacity-50">{activo ? "Desactivar" : "Activar"}</button>
+                              <button type="button" onClick={() => cambiarEstadoUsuario(usuario)} disabled={noPuedeReactivar} title={noPuedeReactivar ? "Las cuentas legado no se pueden reactivar durante esta etapa." : undefined} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50">{activo ? "Desactivar" : "Activar"}</button>
                             </div>
                           </td>
                         </tr>

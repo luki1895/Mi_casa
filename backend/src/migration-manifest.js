@@ -4,6 +4,9 @@ export const migrationManifest = Object.freeze({
     [filename("000_init_schema")]: {
         dependencies: [],
         manualOnly: false,
+        acceptedHistoricalChecksums: [
+            "19d7c3e534575735f565c27b63fec789b11bcce95a70b87bad5df9a67388c7b9",
+        ],
     },
     [filename("001_operaciones_restaurante")]: {
         dependencies: [filename("000_init_schema")],
@@ -18,7 +21,10 @@ export const migrationManifest = Object.freeze({
         manualOnly: true,
     },
     [filename("004_maria_prueba_como_mesera")]: {
-        dependencies: null,
+        dependencies: [
+            filename("000_init_schema"),
+            filename("003_restaurar_usuarios_prueba"),
+        ],
         manualOnly: true,
     },
     [filename("005_integral_completion")]: {
@@ -51,5 +57,12 @@ export const migrationManifest = Object.freeze({
     [filename("011_distribucion_plano_mesas")]: {
         dependencies: [filename("010_configuracion_mesas")],
         manualOnly: false,
+    },
+    [filename("012_retirar_rol_empleado")]: {
+        dependencies: [
+            filename("005_integral_completion"),
+            filename("011_distribucion_plano_mesas"),
+        ],
+        manualOnly: true,
     },
 });

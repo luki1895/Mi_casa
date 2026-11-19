@@ -123,7 +123,10 @@ export function getHistoryIssues(migrations, appliedByName) {
 
         if (!migration) {
             issues.push(`La base registra ${filename}, pero el archivo no existe localmente.`);
-        } else if (recordedChecksum !== migration.checksum) {
+        } else if (
+            recordedChecksum !== migration.checksum
+            && !migration.acceptedHistoricalChecksums?.includes(recordedChecksum)
+        ) {
             issues.push(
                 `Checksum distinto en ${filename}: `
                 + `registrado=${recordedChecksum}, calculado=${migration.checksum}.`,
@@ -144,12 +147,16 @@ export function getMigrationStatuses(migrations, appliedByName) {
         const recordedChecksum = appliedByName.get(migration.filename);
 
         if (recordedChecksum) {
+            const checksumAccepted = recordedChecksum === migration.checksum
+                || migration.acceptedHistoricalChecksums?.includes(recordedChecksum);
             return {
                 ...migration,
                 recordedChecksum,
                 status: recordedChecksum === migration.checksum
                     ? "APLICADA"
-                    : "CHECKSUM_DISTINTO",
+                    : checksumAccepted
+                        ? "APLICADA_RECONCILIADA"
+                        : "CHECKSUM_DISTINTO",
             };
         }
 

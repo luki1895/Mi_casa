@@ -142,6 +142,17 @@ const crear = async (datos = {}) => {
 
 const actualizar = async (id, datos = {}) => {
     const { usuario, password, rol, estado } = datos;
+    const existente = await pool.query(
+        "SELECT rol, estado FROM usuario WHERE id_usuario=$1",
+        [id]
+    );
+    if (!existente.rows[0]) {
+        throw Object.assign(new Error("Usuario no encontrado"), { status: 404 });
+    }
+
+    const rolActual = normalizarRol(existente.rows[0].rol);
+    const cuentaEmpleadoLegada = rolActual === "empleado";
+    const estadoActual = normalizarEstado(existente.rows[0].estado);
     const campos = [];
     const params = [];
     let rolNormalizado;
@@ -162,21 +173,35 @@ const actualizar = async (id, datos = {}) => {
 
     if (rol !== undefined && String(rol).trim()) {
         rolNormalizado = normalizarRol(rol);
-        if (!rolesPermitidos.has(rolNormalizado)) {
+        if (cuentaEmpleadoLegada && rolNormalizado !== "empleado") {
+            throw Object.assign(
+                new Error("El rol de esta cuenta histórica está protegido durante la transición"),
+                { status: 400 },
+            );
+        }
+        if (!cuentaEmpleadoLegada && !rolesPermitidos.has(rolNormalizado)) {
             throw Object.assign(new Error("El rol seleccionado no es válido"), { status: 400 });
         }
-        params.push(rolNormalizado);
-        campos.push(`rol = $${params.length}`);
+        if (!cuentaEmpleadoLegada) {
+            params.push(rolNormalizado);
+            campos.push(`rol = $${params.length}`);
+        }
     }
 
     if (estado !== undefined) {
         const estadoNormalizado = normalizarEstado(estado);
-        if (estadoNormalizado === true && !rolNormalizado) {
-            const existente = await pool.query("SELECT rol, estado FROM usuario WHERE id_usuario=$1", [id]);
-            if (!existente.rows[0]) throw Object.assign(new Error("Usuario no encontrado"), { status: 404 });
-                const rolExistente = normalizarRol(existente.rows[0].rol);
-                if (!rolesPermitidos.has(rolExistente)) {
-                    throw Object.assign(new Error("Asigna un rol vigente antes de reactivar esta cuenta"), { status: 400 });
+        if (estadoNormalizado === true) {
+            if (cuentaEmpleadoLegada && estadoActual !== true) {
+                throw Object.assign(
+                    new Error("No se puede reactivar una cuenta con rol empleado"),
+                    { status: 400 },
+                );
+            }
+            if (!cuentaEmpleadoLegada && !rolesPermitidos.has(rolNormalizado || rolActual)) {
+                throw Object.assign(
+                    new Error("Asigna un rol vigente antes de reactivar esta cuenta"),
+                    { status: 400 },
+                );
             }
         }
         params.push(estadoNormalizado);
@@ -184,8 +209,6 @@ const actualizar = async (id, datos = {}) => {
     }
 
     if (!campos.length) {
-        const usuarioActual = await obtener(id);
-        if (!usuarioActual) throw Object.assign(new Error("Usuario no encontrado"), { status: 404 });
         if (datos.nombre_completo || datos.nombre || datos.ci || datos.correo || datos.email || datos.telefono) {
             await guardarDatosPersona(id, datos);
         }

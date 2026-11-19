@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 import {
     executeSingleMigration,
+    getHistoryIssues,
     getMigrationStatuses,
     loadMigrationFiles,
     parseMigrationCommand,
@@ -52,6 +53,30 @@ test("an applied checksum mismatch blocks every migration", () => {
             confirmationChecksum: byFilename.get("005_integral_completion.sql").checksum,
         }),
         /Checksum distinto en 000_init_schema\.sql/,
+    );
+});
+
+test("the verified historical base checksum is accepted without rewriting database history", () => {
+    const applied = new Map(appliedThrough002);
+    applied.set(
+        "000_init_schema.sql",
+        "19d7c3e534575735f565c27b63fec789b11bcce95a70b87bad5df9a67388c7b9",
+    );
+
+    assert.deepEqual(getHistoryIssues(migrations, applied), []);
+    assert.equal(
+        getMigrationStatuses(migrations, applied)
+            .find(({ filename }) => filename === "000_init_schema.sql").status,
+        "APLICADA_RECONCILIADA",
+    );
+    assert.equal(
+        planSingleMigration({
+            migrations,
+            appliedByName: applied,
+            targetFilename: "005_integral_completion.sql",
+            confirmationChecksum: byFilename.get("005_integral_completion.sql").checksum,
+        }).alreadyApplied,
+        false,
     );
 });
 
@@ -130,6 +155,35 @@ test("010 depends on the existing mesa and atención schema from 006", () => {
     assert.deepEqual(
         byFilename.get("010_configuracion_mesas.sql").dependencies,
         ["006_mesas_atenciones.sql"],
+    );
+});
+
+test("004 depends on the guarded password state prepared by manual migration 003", () => {
+    assert.deepEqual(
+        byFilename.get("004_maria_prueba_como_mesera.sql").dependencies,
+        [
+            "000_init_schema.sql",
+            "003_restaurar_usuarios_prueba.sql",
+        ],
+    );
+    assert.equal(byFilename.get("004_maria_prueba_como_mesera.sql").manualOnly, true);
+});
+
+test("012 prepares employee-role retirement after mesa migrations and stays manual", () => {
+    const migration = byFilename.get("012_retirar_rol_empleado.sql");
+    assert.deepEqual(migration.dependencies, [
+        "005_integral_completion.sql",
+        "011_distribucion_plano_mesas.sql",
+    ]);
+    assert.equal(migration.manualOnly, true);
+    assert.throws(
+        () => planSingleMigration({
+            migrations,
+            appliedByName: appliedThrough002,
+            targetFilename: migration.filename,
+            confirmationChecksum: migration.checksum,
+        }),
+        /es manual y está bloqueada/,
     );
 });
 

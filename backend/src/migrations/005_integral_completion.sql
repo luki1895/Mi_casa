@@ -1,8 +1,8 @@
 ALTER TABLE usuario DROP CONSTRAINT IF EXISTS usuario_rol_check;
--- Preserve existing account rows; enforce the supported roles on new or updated rows.
+-- Retain legacy empleado rows while enforcing the role constraint on future writes.
 ALTER TABLE usuario
     ADD CONSTRAINT usuario_rol_check
-        CHECK (rol IN ('admin', 'mesero', 'caja', 'cliente')) NOT VALID;
+        CHECK (rol IN ('admin', 'empleado', 'mesero', 'caja', 'cliente')) NOT VALID;
 
 ALTER TABLE pago DROP CONSTRAINT IF EXISTS pago_recibido_check;
 ALTER TABLE pago
