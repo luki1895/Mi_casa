@@ -1,15 +1,10 @@
 import { useEffect, useState } from "react";
 import api from "../../api/axios";
+import fechaRestaurante from "../../utils/fechaRestaurante";
 
 const mananaLaPaz = () => {
-    const parts = new Intl.DateTimeFormat("en-CA", {
-        timeZone: "America/La_Paz",
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-    }).formatToParts(new Date());
-    const values = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
-    const manana = new Date(Date.UTC(Number(values.year), Number(values.month) - 1, Number(values.day) + 1));
+    const [year, month, day] = fechaRestaurante().split("-").map(Number);
+    const manana = new Date(Date.UTC(year, month - 1, day + 1));
     return manana.toISOString().slice(0, 10);
 };
 const nuevaSolicitud = () => window.crypto.randomUUID();

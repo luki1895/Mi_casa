@@ -1,16 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import api from "../../api/axios";
-
-const fechaLocal = () => {
-    const hoy = new Date();
-    return `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, "0")}-${String(hoy.getDate()).padStart(2, "0")}`;
-};
+import fechaRestaurante from "../../utils/fechaRestaurante";
 
 const moneda = (valor) => `Bs ${Number(valor || 0).toFixed(2)}`;
 
 function Pedidos() {
     const [clientes, setClientes] = useState([]);
     const [menu, setMenu] = useState([]);
+    const [menuConfirmado, setMenuConfirmado] = useState(false);
     const [pedidos, setPedidos] = useState([]);
     const [tipoCliente, setTipoCliente] = useState("PENSIONADO");
     const [clienteId, setClienteId] = useState("");
@@ -25,7 +22,7 @@ function Pedidos() {
     const [aviso, setAviso] = useState("");
 
     const obtenerDatos = useCallback(async () => {
-        const fecha = fechaLocal();
+        const fecha = fechaRestaurante();
         const [clientesResponse, menuResponse, pedidosResponse] = await Promise.all([
             api.get("/clientes/para-pedidos"),
             api.get(`/produccion/menu?fecha=${fecha}`),
@@ -47,10 +44,15 @@ function Pedidos() {
                 if (cancelado) return;
                 setClientes(datos.clientes);
                 setMenu(datos.menu);
+                setMenuConfirmado(true);
                 setPedidos(datos.pedidos);
             })
             .catch((requestError) => {
-                if (!cancelado) setError(requestError.response?.data?.mensaje || "No se pudieron cargar los datos de pedidos.");
+                if (!cancelado) {
+                    setMenu([]);
+                    setMenuConfirmado(false);
+                    setError(requestError.response?.data?.mensaje || "No se pudieron cargar los datos de pedidos.");
+                }
             })
             .finally(() => {
                 if (!cancelado) setCargando(false);
@@ -61,12 +63,17 @@ function Pedidos() {
     const cargar = useCallback(async () => {
         setCargando(true);
         setError("");
+        setMenu([]);
+        setMenuConfirmado(false);
         try {
             const datos = await obtenerDatos();
             setClientes(datos.clientes);
             setMenu(datos.menu);
+            setMenuConfirmado(true);
             setPedidos(datos.pedidos);
         } catch (requestError) {
+            setMenu([]);
+            setMenuConfirmado(false);
             setError(requestError.response?.data?.mensaje || "No se pudieron cargar los datos de pedidos.");
         } finally {
             setCargando(false);
@@ -84,8 +91,13 @@ function Pedidos() {
 
     const agregarProducto = (producto) => {
         setAviso("");
+        const stock = Number(producto.stock);
+        if (!Number.isFinite(stock) || stock < 1) {
+            setAviso(`No se pudo confirmar la disponibilidad de ${producto.nombre}.`);
+            return;
+        }
         const existente = carrito.find((item) => item.id_producto === producto.id_producto);
-        if ((existente?.cantidad || 0) >= Number(producto.stock)) {
+        if ((existente?.cantidad || 0) >= stock) {
             setAviso(`No hay más unidades disponibles de ${producto.nombre}.`);
             return;
         }
@@ -141,7 +153,7 @@ function Pedidos() {
                 id_cliente: tipoCliente === "PENSIONADO" ? Number(clienteId) : undefined,
                 cliente_nombre: tipoCliente === "EVENTUAL" ? nombreEventual.trim() : undefined,
                 cliente_telefono: tipoCliente === "EVENTUAL" ? telefonoEventual.trim() : undefined,
-                fecha: fechaLocal(),
+                fecha: fechaRestaurante(),
                 observaciones: observaciones.trim(),
                 detalle: carrito.map(({ id_producto, cantidad }) => ({ id_producto, cantidad })),
             });
@@ -212,17 +224,19 @@ function Pedidos() {
                         </div>
                         {cargando ? (
                             <p className="py-6 text-center text-slate-500">Cargando menú…</p>
+                        ) : !menuConfirmado ? (
+                            <p className="py-6 text-center text-slate-500">No se pudo confirmar la disponibilidad del menú.</p>
                         ) : menuFiltrado.length ? (
                             <div className="divide-y">
                                 {menuFiltrado.map((producto) => (
                                     <div key={producto.id_producto} className="flex items-center justify-between gap-4 py-3">
                                         <div>
                                             <p className="font-semibold">{producto.nombre}</p>
-                                            <p className="text-sm text-slate-500">{producto.categoria} · {producto.stock} disponibles</p>
+                                            <p className="text-sm text-slate-500">{producto.categoria} · {producto.stock !== null && producto.stock !== undefined && producto.stock !== "" && Number.isFinite(Number(producto.stock)) ? `${Number(producto.stock)} disponibles` : "Disponibilidad no confirmada"}</p>
                                         </div>
                                         <div className="flex items-center gap-3">
                                             <strong>{moneda(producto.precio)}</strong>
-                                            <button type="button" disabled={Number(producto.stock) < 1} onClick={() => agregarProducto(producto)} className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-bold text-white disabled:opacity-40">Agregar</button>
+                                            <button type="button" disabled={!Number.isFinite(Number(producto.stock)) || Number(producto.stock) < 1} onClick={() => agregarProducto(producto)} className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-bold text-white disabled:opacity-40">Agregar</button>
                                         </div>
                                     </div>
                                 ))}

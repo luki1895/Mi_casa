@@ -1,8 +1,9 @@
 import produccionModel from "../models/produccion.model.js";
 import response from "../utils/response.js";
+import fechaRestaurante from "../utils/fechaRestaurante.js";
 
 const validarFecha = (fecha) => {
-    if (!fecha) return new Date().toISOString().slice(0, 10);
+    if (!fecha) return fechaRestaurante();
     if (!/^\d{4}-\d{2}-\d{2}$/.test(String(fecha))) {
         throw Object.assign(new Error("La fecha no tiene el formato YYYY-MM-DD"), { status: 400 });
     }

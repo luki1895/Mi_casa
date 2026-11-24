@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import api from "../../api/axios";
+import fechaRestaurante from "../../utils/fechaRestaurante";
 
 const campos = [
   ["Sopa", "id_sopa", "cantidad_sopa"],
@@ -16,17 +17,13 @@ const nuevaProduccion = () => ({
   cantidad_entrada: 0, cantidad_refresco: 0, cantidad_extra: 0, precio_extra: "",
 });
 
-const fechaLocal = () => {
-  const fecha = new Date();
-  return `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, "0")}-${String(fecha.getDate()).padStart(2, "0")}`;
-};
-
 function Produccion() {
-  const [fecha, setFecha] = useState(fechaLocal);
+  const [fecha, setFecha] = useState(fechaRestaurante);
   const [produccion, setProduccion] = useState(nuevaProduccion);
   const [productos, setProductos] = useState([]);
-  const [disponibilidad, setDisponibilidad] = useState([]);
-  const [cargando, setCargando] = useState(false);
+  const [disponibilidad, setDisponibilidad] = useState(null);
+  const [datosCargados, setDatosCargados] = useState(false);
+  const [cargando, setCargando] = useState(true);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
   const [aviso, setAviso] = useState("");
@@ -54,12 +51,18 @@ function Produccion() {
   const cargar = useCallback(async () => {
     setCargando(true);
     setError("");
+    setDatosCargados(false);
+    setDisponibilidad(null);
     try {
       const datos = await obtenerDatos();
       setProduccion(datos.produccion);
       setProductos(datos.productos);
       setDisponibilidad(datos.disponibilidad);
+      setDatosCargados(true);
     } catch (requestError) {
+      setProduccion(nuevaProduccion());
+      setProductos([]);
+      setDisponibilidad(null);
       setError(requestError.response?.data?.mensaje || "No se pudo consultar la producción. Verifica que el backend y la migración estén activos.");
     } finally {
       setCargando(false);
@@ -74,9 +77,14 @@ function Produccion() {
         setProduccion(datos.produccion);
         setProductos(datos.productos);
         setDisponibilidad(datos.disponibilidad);
+        setDatosCargados(true);
       })
       .catch((requestError) => {
-        if (!cancelado) setError(requestError.response?.data?.mensaje || "No se pudo consultar la producción. Verifica que el backend y la migración estén activos.");
+        if (cancelado) return;
+        setProduccion(nuevaProduccion());
+        setProductos([]);
+        setDisponibilidad(null);
+        setError(requestError.response?.data?.mensaje || "No se pudo consultar la producción. Verifica que el backend y la migración estén activos.");
       })
       .finally(() => {
         if (!cancelado) setCargando(false);
@@ -94,6 +102,10 @@ function Produccion() {
 
   const guardar = async (event) => {
     event.preventDefault();
+    if (!datosCargados) {
+      setError("No se puede guardar producción hasta confirmar los datos actuales.");
+      return;
+    }
     setGuardando(true);
     setAviso("");
     setError("");
@@ -115,7 +127,7 @@ function Produccion() {
       setAviso("Producción del día guardada.");
       await cargar();
     } catch (requestError) {
-      setError(requestError.message || requestError.response?.data?.mensaje || "No se pudo guardar la producción.");
+      setError(requestError.response?.data?.mensaje || requestError.message || "No se pudo guardar la producción.");
     } finally {
       setGuardando(false);
     }
@@ -124,17 +136,17 @@ function Produccion() {
   return (
     <div className="space-y-6">
       <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-        <div><p className="text-xs font-bold uppercase tracking-[0.25em] text-amber-700">Operación diaria</p><h1 className="mt-1 text-3xl font-black text-slate-900">Producción y disponibilidad</h1></div>
-        <label className="text-sm font-semibold text-slate-600">Fecha <input type="date" value={fecha} onChange={(event) => setFecha(event.target.value)} className="ml-2 rounded-lg border border-slate-200 bg-white px-3 py-2" /></label>
+      <div><p className="text-xs font-bold uppercase tracking-[0.25em] text-amber-700">Operación diaria</p><h1 className="mt-1 text-3xl font-black text-slate-900">Producción y disponibilidad</h1></div>
+      <label className="text-sm font-semibold text-slate-600">Fecha <input type="date" value={fecha} onChange={(event) => { setFecha(event.target.value); setCargando(true); setError(""); setDatosCargados(false); setProduccion(nuevaProduccion()); setProductos([]); setDisponibilidad(null); }} className="ml-2 rounded-lg border border-slate-200 bg-white px-3 py-2" /></label>
       </header>
       {(error || aviso) && <p role={error ? "alert" : "status"} className={`rounded-xl p-4 text-sm ${error ? "bg-rose-50 text-rose-800" : "bg-emerald-50 text-emerald-800"}`}>{error || aviso}</p>}
       <section className="grid gap-4 sm:grid-cols-3">
-        <div className="rounded-2xl bg-white p-5 shadow-sm"><p className="text-sm text-slate-500">Platos preparados</p><p className="mt-2 text-3xl font-black">{totalPreparados}</p></div>
-        <div className="rounded-2xl bg-white p-5 shadow-sm"><p className="text-sm text-slate-500">Unidades vendidas</p><p className="mt-2 text-3xl font-black">{disponibilidad.reduce((total, plato) => total + Number(plato.vendidos || 0), 0)}</p></div>
-        <div className="rounded-2xl bg-white p-5 shadow-sm"><p className="text-sm text-slate-500">Unidades reservadas</p><p className="mt-2 text-3xl font-black">{disponibilidad.reduce((total, plato) => total + Number(plato.reservados || 0), 0)}</p></div>
+      <div className="rounded-2xl bg-white p-5 shadow-sm"><p className="text-sm text-slate-500">Platos preparados</p><p className="mt-2 text-3xl font-black">{datosCargados ? totalPreparados : "—"}</p></div>
+      <div className="rounded-2xl bg-white p-5 shadow-sm"><p className="text-sm text-slate-500">Unidades vendidas</p><p className="mt-2 text-3xl font-black">{datosCargados ? disponibilidad.reduce((total, plato) => total + Number(plato.vendidos || 0), 0) : "—"}</p></div>
+      <div className="rounded-2xl bg-white p-5 shadow-sm"><p className="text-sm text-slate-500">Unidades reservadas</p><p className="mt-2 text-3xl font-black">{datosCargados ? disponibilidad.reduce((total, plato) => total + Number(plato.reservados || 0), 0) : "—"}</p></div>
       </section>
       <form onSubmit={guardar} className="rounded-2xl bg-white p-5 shadow-sm sm:p-6">
-        <div className="mb-5 flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-xl font-bold">Menú del día</h2><p className="text-sm text-slate-500">Selecciona productos registrados y registra las unidades preparadas.</p></div><button type="button" onClick={cargar} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold">Actualizar</button></div>
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-xl font-bold">Menú del día</h2><p className="text-sm text-slate-500">Selecciona productos registrados y registra las unidades preparadas.</p></div><button type="button" onClick={cargar} disabled={cargando || guardando} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold disabled:opacity-50">Actualizar</button></div>
         {cargando ? <p className="py-6 text-center text-slate-500">Cargando producción…</p> : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[680px] text-left text-sm">
@@ -152,11 +164,11 @@ function Produccion() {
             </table>
           </div>
         )}
-        <div className="mt-5 flex justify-end"><button disabled={guardando || cargando} className="rounded-xl bg-slate-900 px-6 py-3 font-bold text-white disabled:opacity-50">{guardando ? "Guardando…" : "Guardar producción"}</button></div>
+        <div className="mt-5 flex justify-end"><button disabled={guardando || cargando || !datosCargados} className="rounded-xl bg-slate-900 px-6 py-3 font-bold text-white disabled:opacity-50">{guardando ? "Guardando…" : "Guardar producción"}</button></div>
       </form>
       <section className="rounded-2xl bg-white p-5 shadow-sm sm:p-6">
         <h2 className="text-xl font-bold">Disponibilidad para venta</h2>
-        <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[620px] text-left text-sm"><thead className="border-b bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="p-3">Plato</th><th className="p-3">Categoría</th><th className="p-3">Preparados</th><th className="p-3">Vendidos</th><th className="p-3">Reservados</th><th className="p-3">Disponibles</th><th className="p-3">Precio</th></tr></thead><tbody className="divide-y divide-slate-100">{disponibilidad.length === 0 ? <tr><td colSpan="7" className="p-6 text-center text-slate-500">Sin producción disponible para esta fecha.</td></tr> : disponibilidad.map((plato) => <tr key={`${plato.id_producto}-${plato.categoria}`}><td className="p-3 font-semibold">{plato.nombre}</td><td className="p-3">{plato.categoria}</td><td className="p-3">{plato.preparados}</td><td className="p-3">{plato.vendidos}</td><td className="p-3">{plato.reservados}</td><td className="p-3 font-bold">{plato.stock}</td><td className="p-3">Bs {Number(plato.precio).toFixed(2)}</td></tr>)}</tbody></table></div>
+        <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[620px] text-left text-sm"><thead className="border-b bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="p-3">Plato</th><th className="p-3">Categoría</th><th className="p-3">Preparados</th><th className="p-3">Vendidos</th><th className="p-3">Reservados</th><th className="p-3">Disponibles</th><th className="p-3">Precio</th></tr></thead><tbody className="divide-y divide-slate-100">{!datosCargados ? <tr><td colSpan="7" className="p-6 text-center text-slate-500">{cargando ? "Consultando disponibilidad…" : "No se pudo confirmar la disponibilidad."}</td></tr> : disponibilidad.length === 0 ? <tr><td colSpan="7" className="p-6 text-center text-slate-500">Sin producción disponible para esta fecha.</td></tr> : disponibilidad.map((plato) => <tr key={`${plato.id_producto}-${plato.categoria}`}><td className="p-3 font-semibold">{plato.nombre}</td><td className="p-3">{plato.categoria}</td><td className="p-3">{plato.preparados}</td><td className="p-3">{plato.vendidos}</td><td className="p-3">{plato.reservados}</td><td className="p-3 font-bold">{plato.stock}</td><td className="p-3">Bs {Number(plato.precio).toFixed(2)}</td></tr>)}</tbody></table></div>
       </section>
     </div>
   );

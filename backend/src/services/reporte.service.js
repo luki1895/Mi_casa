@@ -1,5 +1,6 @@
 import reporteModel from "../models/reporte.model.js";
 import produccionModel from "../models/produccion.model.js";
+import fechaRestaurante from "../utils/fechaRestaurante.js";
 
 const operativo=(desde,hasta)=>reporteModel.operativo(desde,hasta);
 
@@ -15,7 +16,7 @@ const eventuales=await reporteModel.eventualesHoy();
 
 const pedidosActivos=await reporteModel.pedidosActivosHoy();
 
-const menu=await produccionModel.listarMenu(new Date().toISOString().slice(0,10), undefined, true);
+const menu=await produccionModel.listarMenu(fechaRestaurante(), undefined, true);
 
 const produccion={
 	preparados:menu.reduce((total,plato)=>total+Number(plato.preparados||0),0),

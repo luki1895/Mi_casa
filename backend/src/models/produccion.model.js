@@ -23,8 +23,6 @@ const listarMenu = async (fecha, db = pool, incluirAgotados = false) => {
 			WHERE rp.fecha = $1::date
 			  AND rp.estado = 'PENDIENTE'
 			  AND rp.id_pedido IS NULL
-			  AND rp.codigo_revocado_en IS NULL
-			  AND (rp.codigo_expira_en IS NULL OR rp.codigo_expira_en > NOW())
 			GROUP BY dr.id_producto
 		)`
 		: "reservas AS (SELECT NULL::bigint AS id_producto, NULL::numeric AS cantidad WHERE FALSE)";
@@ -58,6 +56,11 @@ const listarMenu = async (fecha, db = pool, incluirAgotados = false) => {
 			FROM produccion_diaria pd CROSS JOIN configuracion c
 			WHERE pd.fecha = $1 AND pd.id_plato_extra IS NOT NULL
 		),
+		menu_agregado AS (
+			SELECT id_producto, categoria, SUM(producido) AS producido, MAX(precio) AS precio
+			FROM menu
+			GROUP BY id_producto, categoria
+		),
 		pedidos AS (
 			SELECT dp.id_producto,
 			       SUM(dp.cantidad) FILTER (WHERE pe.pagado IS TRUE) AS vendidos,
@@ -88,7 +91,7 @@ const listarMenu = async (fecha, db = pool, incluirAgotados = false) => {
 		           + COALESCE(rp.cantidad, 0) AS comprometidos,
 		       GREATEST(m.producido - COALESCE(pd.comprometidos, 0)
 		           - COALESCE(ad.cantidad, 0) - COALESCE(rp.cantidad, 0), 0) AS stock
-		FROM menu m
+		FROM menu_agregado m
 		INNER JOIN producto p ON p.id_producto = m.id_producto AND p.activo IS TRUE
 		LEFT JOIN pedidos pd ON pd.id_producto = m.id_producto
 		LEFT JOIN adicionales ad ON ad.id_producto = m.id_producto
@@ -201,9 +204,11 @@ const crear=async(datos, idUsuario)=>{
 			throw Object.assign(new Error("El producto seleccionado no es válido"), { status: 400 });
 		}
 	}
-	if (datos.precio_extra !== undefined && datos.precio_extra !== null
-		&& (!Number.isFinite(Number(datos.precio_extra)) || Number(datos.precio_extra) < 0)) {
-		throw Object.assign(new Error("El precio especial debe ser un número no negativo"), { status: 400 });
+	if (datos.precio_extra !== undefined && datos.precio_extra !== null) {
+		const precioExtra = Number(datos.precio_extra);
+		if (!Number.isFinite(precioExtra) || precioExtra < 0 || Math.round(precioExtra * 100) / 100 !== precioExtra) {
+			throw Object.assign(new Error("El precio especial debe ser no negativo y tener como máximo dos decimales"), { status: 400 });
+		}
 	}
 	const client = await pool.connect();
 	try {
@@ -234,7 +239,10 @@ const crear=async(datos, idUsuario)=>{
 		for (const plato of menuActual) {
 			const comprometido = Number(plato.vendidos || 0) + Number(plato.reservados || 0);
 			if ((cantidadesNuevas.get(Number(plato.id_producto)) || 0) < comprometido) {
-				throw new Error(`No se puede reducir la producción de ${plato.nombre}: hay ${comprometido} unidades vendidas o reservadas.`);
+				throw Object.assign(
+					new Error(`No se puede reducir la producción de ${plato.nombre}: hay ${comprometido} unidades vendidas o reservadas.`),
+					{ status: 409 },
+				);
 			}
 		}
 		const existente = await client.query(

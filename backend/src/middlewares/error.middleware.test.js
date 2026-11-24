@@ -33,6 +33,14 @@ test("el agotamiento del pool explica que no hay conexiones disponibles", () => 
     assert.match(response.resultado.cuerpo.mensaje, /límite de conexiones disponibles/);
 });
 
+test("el límite de conexiones de PostgreSQL se informa como HTTP 503", () => {
+    const response = responder();
+    errorMiddleware({ code: "53300" }, {}, response, () => {});
+
+    assert.equal(response.resultado.status, 503);
+    assert.match(response.resultado.cuerpo.mensaje, /límite de conexiones disponibles/);
+});
+
 test("los errores internos no exponen el mensaje de PostgreSQL", (context) => {
     const response = responder();
     context.mock.method(console, "error", () => {});

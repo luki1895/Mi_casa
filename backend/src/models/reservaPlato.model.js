@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import pool from "../config/db.js";
 import produccionModel from "./produccion.model.js";
+import fechaRestaurante from "../utils/fechaRestaurante.js";
 
 const estados = new Set(["PENDIENTE", "RECIBIDA", "EN_PREPARACION", "ATENDIDA", "CANCELADA", "NO_PRESENTADA"]);
 const tokenHash = (token) => crypto.createHash("sha256").update(String(token)).digest("hex");
@@ -11,17 +12,6 @@ const validarId = (id, recurso) => {
     }
     return numero;
 };
-const localToday = () => {
-    const parts = new Intl.DateTimeFormat("en-CA", {
-        timeZone: "America/La_Paz",
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-    }).formatToParts(new Date());
-    const values = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
-    return `${values.year}-${values.month}-${values.day}`;
-};
-
 const assertReady = async (db) => {
     const { rows } = await db.query(
         `SELECT to_regclass('public.reserva_plato') IS NOT NULL
@@ -49,7 +39,7 @@ const validarFechaHora = async (fecha, hora, db = pool) => {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(fechaTexto)
         || Number.isNaN(parsed.getTime())
         || parsed.toISOString().slice(0, 10) !== fechaTexto
-        || fechaTexto <= localToday()) {
+        || fechaTexto <= fechaRestaurante()) {
         throw Object.assign(new Error("La reserva debe ser para una fecha futura válida"), { status: 400 });
     }
     const config = await obtenerConfiguracion(db);
@@ -450,7 +440,7 @@ const recibir = async (idReserva, idUsuario, idAtencion = null) => {
         if (reserva.estado !== "PENDIENTE" || reserva.id_pedido) {
             throw Object.assign(new Error("La reserva no está pendiente de recepción"), { status: 409 });
         }
-        if (String(reserva.fecha).slice(0, 10) !== localToday()) {
+        if (String(reserva.fecha).slice(0, 10) !== fechaRestaurante()) {
             throw Object.assign(new Error("La reserva solo puede recibirse el día programado"), { status: 409 });
         }
         await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`menu:${String(reserva.fecha).slice(0, 10)}`]);

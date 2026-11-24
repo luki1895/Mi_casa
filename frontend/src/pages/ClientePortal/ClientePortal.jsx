@@ -2,22 +2,17 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../../api/axios";
 import useAuth from "../../hooks/useAuth";
-
-const obtenerFechaLocal = (fecha = new Date()) => {
-    const año = fecha.getFullYear();
-    const mes = String(fecha.getMonth() + 1).padStart(2, "0");
-    const dia = String(fecha.getDate()).padStart(2, "0");
-    return `${año}-${mes}-${dia}`;
-};
+import fechaRestaurante from "../../utils/fechaRestaurante";
 
 const fechasSemana = () => {
-    const hoy = new Date();
-    const lunes = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
-    lunes.setDate(lunes.getDate() - ((lunes.getDay() + 6) % 7));
+    const [year, month, day] = fechaRestaurante().split("-").map(Number);
+    const hoy = new Date(Date.UTC(year, month - 1, day, 12));
+    const lunes = new Date(hoy);
+    lunes.setUTCDate(hoy.getUTCDate() - ((hoy.getUTCDay() + 6) % 7));
     return Array.from({ length: 7 }, (_, indice) => {
         const fecha = new Date(lunes);
-        fecha.setDate(lunes.getDate() + indice);
-        return obtenerFechaLocal(fecha);
+        fecha.setUTCDate(lunes.getUTCDate() + indice);
+        return fechaRestaurante(fecha);
     });
 };
 
@@ -33,7 +28,7 @@ const estadoBonito = (estado) => String(estado || "PENDIENTE").replaceAll("_", "
 function ClientePortal() {
     const { usuario, logout } = useAuth();
     const navigate = useNavigate();
-    const hoy = obtenerFechaLocal();
+    const hoy = fechaRestaurante();
     const semana = useMemo(() => fechasSemana(), []);
     const [cuenta, setCuenta] = useState(null);
     const [menusSemana, setMenusSemana] = useState({});
@@ -65,12 +60,15 @@ function ClientePortal() {
                 setError(resultados[0].reason.response?.data?.mensaje || "No se pudo cargar la información de tu cuenta.");
             }
             const menus = {};
+            let menuError = false;
             resultados.slice(1).forEach((resultado, indice) => {
                 menus[semana[indice]] = resultado.status === "fulfilled"
                     ? resultado.value.data.data || []
-                    : [];
+                    : null;
+                if (resultado.status === "rejected") menuError = true;
             });
             setMenusSemana(menus);
+            if (menuError) setError((actual) => actual || "No se pudo confirmar la disponibilidad para uno o más días.");
             setCargando(false);
         };
         cargar();
@@ -82,7 +80,7 @@ function ClientePortal() {
         navigate("/login", { replace: true });
     };
 
-    const menuHoy = menusSemana[hoy] || [];
+    const menuHoy = menusSemana[hoy];
 
     return (
         <div className="min-h-screen bg-[#f8f5f2] text-slate-800">
@@ -126,7 +124,7 @@ function ClientePortal() {
                             {[
                                 ["Sopas", cuenta ? cuenta.saldo_sopas ?? "Sin asignar" : "—", "Créditos disponibles"],
                                 ["Segundos", cuenta ? cuenta.saldo_segundos ?? "Sin asignar" : "—", "Créditos disponibles"],
-                                ["Platos disponibles hoy", menuHoy.length, "Opciones publicadas"],
+                                ["Platos disponibles hoy", Array.isArray(menuHoy) ? menuHoy.length : "—", Array.isArray(menuHoy) ? "Opciones publicadas" : "Disponibilidad no confirmada"],
                                 ["Pedidos recientes", (cuenta?.pedidos || []).length, "Pedidos asociados a tu cuenta"],
                             ].map(([titulo, valor, detalle]) => (
                                 <article key={titulo} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -150,10 +148,10 @@ function ClientePortal() {
                                     <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Disponibilidad de hoy</p>
                                     <h2 className="mt-1 text-2xl font-black">Platos disponibles</h2>
                                 </div>
-                                <p className="text-sm text-slate-500">{menuHoy.length} opciones disponibles</p>
+                                <p className="text-sm text-slate-500">{Array.isArray(menuHoy) ? `${menuHoy.length} opciones disponibles` : "Disponibilidad no confirmada"}</p>
                             </div>
                             <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                                {menuHoy.map((plato) => (
+                                {(Array.isArray(menuHoy) ? menuHoy : []).map((plato) => (
                                     <article key={`${plato.id_producto}-${plato.categoria}`} className="rounded-xl bg-slate-50 p-4">
                                         <p className="text-xs font-bold uppercase text-amber-700">{plato.categoria}</p>
                                         <h3 className="mt-1 font-bold">{plato.nombre}</h3>
@@ -161,7 +159,9 @@ function ClientePortal() {
                                         <p className="font-black">{moneda(plato.precio)}</p>
                                     </article>
                                 ))}
-                                {!menuHoy.length && <p className="py-4 text-sm text-slate-500">No hay platos disponibles publicados para hoy.</p>}
+                                {!Array.isArray(menuHoy)
+                                    ? <p className="py-4 text-sm text-slate-500">No se pudo confirmar la disponibilidad de hoy.</p>
+                                    : !menuHoy.length && <p className="py-4 text-sm text-slate-500">No hay platos disponibles publicados para hoy.</p>}
                             </div>
                         </section>
 
@@ -173,13 +173,15 @@ function ClientePortal() {
                                     <article key={fecha} className="rounded-xl border border-slate-100 p-4">
                                         <h3 className="font-bold capitalize">{presentarFecha(fecha)}</h3>
                                         <ul className="mt-3 space-y-2 text-sm">
-                                            {(menusSemana[fecha] || []).map((plato) => (
+                                            {(Array.isArray(menusSemana[fecha]) ? menusSemana[fecha] : []).map((plato) => (
                                                 <li key={`${plato.id_producto}-${plato.categoria}`} className="flex justify-between gap-3">
                                                     <span>{plato.nombre} <span className="text-slate-500">· {plato.categoria}</span></span>
                                                     <span className="whitespace-nowrap text-slate-500">{plato.stock} disp.</span>
                                                 </li>
                                             ))}
-                                            {!(menusSemana[fecha] || []).length && <li className="text-slate-500">Menú aún no publicado</li>}
+                                            {!Array.isArray(menusSemana[fecha])
+                                                ? <li className="text-slate-500">No se pudo confirmar disponibilidad.</li>
+                                                : !menusSemana[fecha].length && <li className="text-slate-500">Menú aún no publicado</li>}
                                         </ul>
                                     </article>
                                 ))}

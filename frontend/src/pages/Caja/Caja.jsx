@@ -6,11 +6,8 @@ import MesaBoard from "../../components/MesaBoard";
 import MesaAtencionDetail from "../../components/MesaAtencionDetail";
 import MesaOrderProductAdder from "../../components/MesaOrderProductAdder";
 import useMesaBoardData from "../../hooks/useMesaBoardData";
+import fechaRestaurante from "../../utils/fechaRestaurante";
 
-const obtenerFecha = () => {
-    const ahora = new Date();
-    return `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, "0")}-${String(ahora.getDate()).padStart(2, "0")}`;
-};
 const importe = (valor) => `Bs ${Number(valor || 0).toFixed(2)}`;
 const estadoBonito = (valor) => String(valor || "PENDIENTE").replaceAll("_", " ");
 const escaparHtml = (valor) => String(valor ?? "").replace(/[&<>"']/g, (caracter) => ({
@@ -27,10 +24,11 @@ function Caja() {
     const [atencionId, setAtencionId] = useState("");
     const [clientes, setClientes] = useState([]);
     const [menu, setMenu] = useState([]);
+    const [menuConfirmado, setMenuConfirmado] = useState(false);
     const [gastos, setGastos] = useState([]);
     const [pagos, setPagos] = useState([]);
     const [adicionales, setAdicionales] = useState([]);
-    const [fechaHistorial, setFechaHistorial] = useState(obtenerFecha);
+    const [fechaHistorial, setFechaHistorial] = useState(fechaRestaurante);
     const [historialCaja, setHistorialCaja] = useState(null);
     const [cargandoHistorial, setCargandoHistorial] = useState(false);
     const [cargando, setCargando] = useState(true);
@@ -52,6 +50,7 @@ function Caja() {
     const [pedidoParaCancelar, setPedidoParaCancelar] = useState(null);
     const [motivoAnulacion, setMotivoAnulacion] = useState("");
     const [confirmarCierre, setConfirmarCierre] = useState(false);
+    const [montoPago, setMontoPago] = useState("");
     const [recibido, setRecibido] = useState("");
     const [metodo, setMetodo] = useState("EFECTIVO");
     const [gasto, setGasto] = useState({ concepto: "", descripcion: "", total: "", metodo_pago: "EFECTIVO" });
@@ -97,11 +96,14 @@ function Caja() {
     const cargar = useCallback(async () => {
         setCargando(true);
         setError("");
+        setMenu([]);
+        setMenuConfirmado(false);
         if (usuario?.demo) {
             setPanel({ ventas: 0, gastos: 0, saldo_esperado: 0, pedidos_pendientes: 0, cierre: null, apertura: null, estado_caja: "SIN_ABRIR" });
             setPedidos([]);
             setClientes([]);
             setMenu([]);
+            setMenuConfirmado(false);
             setGastos([]);
             setPagos([]);
             setAdicionales([]);
@@ -110,7 +112,7 @@ function Caja() {
             return;
         }
         try {
-            const fecha = obtenerFecha();
+            const fecha = fechaRestaurante();
             const [panelRes, pedidosRes, clientesRes, menuRes, gastosRes, pagosRes, adicionalesRes] = await Promise.all([
                 api.get("/caja/panel"), api.get("/caja/pedidos"), api.get("/clientes/para-pedidos"),
                 api.get(`/produccion/menu?fecha=${fecha}`), api.get("/caja/gastos"), api.get("/caja/pagos"),
@@ -120,10 +122,13 @@ function Caja() {
             setPedidos(pedidosRes.data.data || []);
             setClientes((clientesRes.data.data || []).filter((cliente) => cliente.estado !== false && String(cliente.estado).toUpperCase() !== "INACTIVO"));
             setMenu(menuRes.data.data || []);
+            setMenuConfirmado(true);
             setGastos(gastosRes.data.data || []);
             setPagos(pagosRes.data.data || []);
             setAdicionales(adicionalesRes.data.data || []);
         } catch (requestError) {
+            setMenu([]);
+            setMenuConfirmado(false);
             setError(requestError.response?.data?.mensaje || "No se pudo cargar Caja. Comprueba la conexión y que se haya aplicado la migración PostgreSQL 001.");
         } finally {
             setCargando(false);
@@ -186,8 +191,11 @@ function Caja() {
     const totalPedido = useMemo(() => carrito.reduce((suma, item) => suma + item.precio * item.cantidad, 0), [carrito]);
     const requiereCajaAbierta = usuario?.role === "caja" && panel.estado_caja !== "ABIERTA";
     const cajaAbierta = panel.estado_caja === "ABIERTA";
-    const totalCobroActual = Number(solicitudCobro?.total || pedidoCobro?.saldo_pendiente || 0);
-    const cambio = Math.max(Number(recibido || 0) - totalCobroActual, 0);
+    const totalCobroActual = Number(solicitudCobro?.total ?? pedidoCobro?.saldo_pendiente ?? 0);
+    const montoCobroActual = solicitudCobro ? totalCobroActual : Number(montoPago);
+    const cambio = Number.isFinite(montoCobroActual)
+        ? Math.max(Number(recibido || 0) - montoCobroActual, 0)
+        : 0;
     const pagosPedidoActual = pedidoCobro
         ? pagos.filter((pago) => Number(pago.id_pedido) === Number(pedidoCobro.id_pedido))
         : [];
@@ -200,6 +208,22 @@ function Caja() {
             : [...actual, { ...producto, cantidad: 1 }];
     });
     const cambiarCantidad = (id, delta) => setCarrito((actual) => actual.map((item) => item.id_producto === id ? { ...item, cantidad: Math.min(Number(item.stock), item.cantidad + delta) } : item).filter((item) => item.cantidad > 0));
+
+    const abrirCobroPedido = (pedido) => {
+        const saldoPendiente = String(pedido.saldo_pendiente);
+        setSolicitudCobro(null);
+        setPedidoCobro(pedido);
+        setMontoPago(saldoPendiente);
+        setRecibido(saldoPendiente);
+    };
+
+    const abrirCobroAdicional = (solicitud) => {
+        const total = String(solicitud.total);
+        setPedidoCobro(null);
+        setSolicitudCobro(solicitud);
+        setMontoPago(total);
+        setRecibido(total);
+    };
 
     const crearPedido = async (event) => {
         event.preventDefault();
@@ -215,7 +239,7 @@ function Caja() {
         try {
             const respuesta = await api.post("/pedidos", {
                 tipo_cliente: tipoCliente,
-                fecha: obtenerFecha(),
+                fecha: fechaRestaurante(),
                 id_cliente: tipoCliente === "PENSIONADO" ? Number(clienteId) : undefined,
                 cliente_nombre: tipoCliente === "EVENTUAL" ? nombreEventual.trim() : undefined,
                 cliente_telefono: tipoCliente === "EVENTUAL" ? telefonoEventual.trim() : undefined,
@@ -238,11 +262,21 @@ function Caja() {
     const confirmarPago = async (event) => {
         event.preventDefault();
         if (!pedidoCobro && !solicitudCobro) return;
+        const monto = solicitudCobro ? totalCobroActual : montoCobroActual;
+        const efectivoRecibido = metodo === "EFECTIVO" ? Number(recibido) : monto;
+        if (!Number.isFinite(monto) || monto <= 0 || monto > totalCobroActual) {
+            setAviso("El abono debe ser mayor que cero y no superar el saldo pendiente.");
+            return;
+        }
+        if (metodo === "EFECTIVO" && (!Number.isFinite(efectivoRecibido) || efectivoRecibido < monto)) {
+            setAviso("El efectivo recibido debe cubrir el importe a cobrar.");
+            return;
+        }
         const idAtencionActual = detalleAtencionSeleccionada?.id_atencion;
         setGuardando(true); setAviso("");
         try {
             if (solicitudCobro) {
-                const adicionalPagado = await api.post(`/caja/adicionales/${solicitudCobro.id_solicitud}/cobrar`, { recibido: Number(recibido), metodo });
+                const adicionalPagado = await api.post(`/caja/adicionales/${solicitudCobro.id_solicitud}/cobrar`, { recibido: efectivoRecibido, metodo });
                 setUltimaComandaAdicional({
                     id_pedido: adicionalPagado.data.data.id_pedido,
                     id_solicitud: solicitudCobro.id_solicitud,
@@ -255,10 +289,15 @@ function Caja() {
                 setAviso(`Adicional cobrado para el pedido #${solicitudCobro.id_pedido}. Imprime la nueva comanda.`);
                 setSolicitudCobro(null);
             } else {
-                await api.post(`/caja/pedidos/${pedidoCobro.id_pedido}/pagos`, { recibido: Number(recibido), metodo });
+                await api.post(`/caja/pedidos/${pedidoCobro.id_pedido}/pagos`, {
+                    monto,
+                    recibido: efectivoRecibido,
+                    metodo,
+                });
                 setAviso(`Pago registrado para el pedido #${pedidoCobro.id_pedido}.`);
                 setPedidoCobro(null);
             }
+            setMontoPago("");
             setRecibido("");
             await Promise.all([cargar(), refrescarMesas(true)]);
             if (idAtencionActual) await consultarAtencion(idAtencionActual);
@@ -380,6 +419,9 @@ function Caja() {
             });
             const comanda = respuesta.data.data;
             const tipoComanda = comanda.tipo === "ADICIONAL" ? "COMANDA ADICIONAL" : "COMANDA";
+            const ubicacion = comanda.id_atencion
+                ? `Mesa ${escaparHtml(comanda.mesa || "No identificada")} · Atención #${escaparHtml(comanda.id_atencion)}`
+                : "Pedido sin mesa";
             const productos = (comanda.detalle || []).map((item) => `<tr><td>${escaparHtml(item.cantidad)} × ${escaparHtml(item.nombre)}</td><td>${importe(item.precio || 0)}</td></tr>`).join("");
             const reimpresion = comanda.es_reimpresion ? "<p><strong>REIMPRESIÓN</strong></p>" : "";
             ventana.document.write(`<!DOCTYPE html>
@@ -403,7 +445,7 @@ function Caja() {
                   <body>
                     <h1>${tipoComanda}</h1>
                     ${reimpresion}
-                    <div class="meta">Pedido #${escaparHtml(comanda.id_pedido)}<br />Cliente: ${escaparHtml(comanda.cliente)}<br />Hora: ${escaparHtml(new Date(comanda.fecha).toLocaleString("es"))}</div>
+                    <div class="meta">Pedido #${escaparHtml(comanda.id_pedido)}<br />${ubicacion}<br />Cliente: ${escaparHtml(comanda.cliente)}<br />Hora: ${escaparHtml(new Date(comanda.fecha).toLocaleString("es"))}</div>
                     <table>${productos}</table>
                     <div class="divider"></div>
                     <div class="total">TOTAL: ${importe(comanda.total || pedido.total || 0)}</div>
@@ -479,11 +521,11 @@ function Caja() {
                 <div>
                     <p className="mb-2 text-sm font-bold text-[#342820]">Menú disponible hoy</p>
                     <div className="max-h-64 space-y-2 overflow-y-auto">
-                        {menu.length ? menu.map((plato) => (
+                        {!menuConfirmado ? <p className="rounded-lg bg-[#FCFAF7] p-4 text-sm text-[#75675C]">No se pudo confirmar la disponibilidad del menú.</p> : menu.length ? menu.map((plato) => (
                             <div key={`${plato.id_producto}-${plato.categoria}`} className="flex items-center justify-between gap-3 rounded-xl bg-[#FCFAF7] p-3">
                                 <div className="min-w-0">
                                     <p className="truncate font-semibold">{plato.nombre} <span className="text-xs font-normal text-slate-500">· {plato.categoria}</span></p>
-                                    <p className="text-xs text-slate-500">{importe(plato.precio)} · {plato.stock} disponibles</p>
+                                    <p className="text-xs text-slate-500">{importe(plato.precio)} · {plato.stock !== null && plato.stock !== undefined && plato.stock !== "" && Number.isFinite(Number(plato.stock)) ? `${Number(plato.stock)} disponibles` : "Disponibilidad no confirmada"}</p>
                                 </div>
                                 <Button type="button" size="sm" disabled={!Number(plato.stock) || guardando} onClick={() => agregar(plato)}>Agregar</Button>
                             </div>
@@ -596,11 +638,7 @@ function Caja() {
                                         <Button
                                             size="sm"
                                             variant="success"
-                                            onClick={() => {
-                                                setSolicitudCobro(null);
-                                                setPedidoCobro({ ...pedido, pagado_total: pedido.pagado_confirmado });
-                                                setRecibido(String(pedido.saldo_pendiente));
-                                            }}
+                                            onClick={() => abrirCobroPedido({ ...pedido, pagado_total: pedido.pagado_confirmado })}
                                         >
                                             Cobrar saldo
                                         </Button>
@@ -802,7 +840,7 @@ function Caja() {
                                     <p>Saldo pendiente: <strong className={Number(pedido.saldo_pendiente) > 0 ? "text-rose-700" : "text-emerald-700"}>{importe(pedido.saldo_pendiente)}</strong></p>
                                 </div>
                                 <div className="mt-4 flex flex-wrap gap-2">
-                                    {Number(pedido.saldo_pendiente) > 0 && <Button size="sm" variant="success" onClick={() => { setPedidoCobro(pedido); setSolicitudCobro(null); setRecibido(String(pedido.saldo_pendiente)); }}>Cobrar saldo</Button>}
+                                    {Number(pedido.saldo_pendiente) > 0 && <Button size="sm" variant="success" onClick={() => abrirCobroPedido(pedido)}>Cobrar saldo</Button>}
                                     {pedido.pagado && <Button size="sm" onClick={() => imprimir(pedido)}>Imprimir comanda</Button>}
                                     {pedido.estado === "PENDIENTE" && !pedido.pagado && <Button size="sm" variant="outline" disabled={guardando} onClick={() => setPedidoParaCancelar(pedido)}>Cancelar pedido</Button>}
                                     {pedido.estado === "EN_PREPARACION" && <Button size="sm" variant="warning" loading={guardando} onClick={() => actualizarEstadoPedido(pedido, "LISTO")}>Marcar listo</Button>}
@@ -818,7 +856,7 @@ function Caja() {
                 <h2 className="text-xl font-black">Solicitudes adicionales por cobrar</h2>
                 <p className="mt-1 text-sm text-slate-500">Cobros adicionales solicitados por los meseros.</p>
                 <div className="mt-4 grid gap-3 md:grid-cols-2">
-                    {adicionales.map((solicitud) => <Card key={solicitud.id_solicitud} className="border-slate-200"><div className="flex flex-wrap justify-between gap-2"><b>Pedido #{solicitud.id_pedido} · {solicitud.cliente}</b><b>{importe(solicitud.total)}</b></div><ul className="my-3 space-y-1 text-sm text-slate-600">{solicitud.detalle.map((item, index) => <li key={`${item.id_producto}-${index}`}>{item.cantidad} × {item.nombre}</li>)}</ul>{solicitud.observaciones && <p className="mb-3 text-xs text-slate-500">Nota de cocina: {solicitud.observaciones}</p>}<Button size="sm" variant="warning" onClick={() => { setPedidoCobro(null); setSolicitudCobro(solicitud); setRecibido(String(solicitud.total)); }}>Cobrar adicional</Button></Card>)}
+                    {adicionales.map((solicitud) => <Card key={solicitud.id_solicitud} className="border-slate-200"><div className="flex flex-wrap justify-between gap-2"><b>Pedido #{solicitud.id_pedido} · {solicitud.cliente}</b><b>{importe(solicitud.total)}</b></div><ul className="my-3 space-y-1 text-sm text-slate-600">{solicitud.detalle.map((item, index) => <li key={`${item.id_producto}-${index}`}>{item.cantidad} × {item.nombre}</li>)}</ul>{solicitud.observaciones && <p className="mb-3 text-xs text-slate-500">Nota de cocina: {solicitud.observaciones}</p>}<Button size="sm" variant="warning" onClick={() => abrirCobroAdicional(solicitud)}>Cobrar adicional</Button></Card>)}
                     {!adicionales.length && <p className="py-4 text-sm text-slate-500">No hay cobros adicionales pendientes.</p>}
                 </div>
                 {ultimaComandaAdicional && <button onClick={() => imprimir(ultimaComandaAdicional)} className="mt-4 rounded-lg bg-slate-900 px-3 py-2 text-xs font-bold text-white">Imprimir última comanda adicional</button>}
@@ -883,6 +921,8 @@ function Caja() {
                     if (guardando) return;
                     setPedidoCobro(null);
                     setSolicitudCobro(null);
+                    setMontoPago("");
+                    setRecibido("");
                 }}
             >
                 <form onSubmit={confirmarPago} className="space-y-4">
@@ -914,24 +954,44 @@ function Caja() {
                         </section>
                     )}
                     <p className="rounded-xl bg-[#FFF8F2] p-3 text-sm text-slate-800">
-                        Importe por cobrar: <strong>{importe(totalCobroActual)}</strong>
+                        Saldo pendiente: <strong>{importe(totalCobroActual)}</strong>
                     </p>
+                    {!solicitudCobro && (
+                        <Input
+                            label="Abono a aplicar (Bs)"
+                            required
+                            type="number"
+                            min="0.01"
+                            max={totalCobroActual}
+                            step="0.01"
+                            value={montoPago}
+                            onChange={(event) => {
+                                const value = event.target.value;
+                                setMontoPago(value);
+                                if (Number(recibido) < Number(value)) setRecibido(value);
+                            }}
+                        />
+                    )}
                     <Select label="Método de pago" value={metodo} onChange={(event) => setMetodo(event.target.value)}>
                         {["EFECTIVO", "TARJETA", "TRANSFERENCIA", "QR"].map((opcion) => <option key={opcion}>{opcion}</option>)}
                     </Select>
-                    <Input
-                        label="Importe recibido (Bs)"
-                        autoFocus
-                        required
-                        type="number"
-                        min={totalCobroActual}
-                        step="0.01"
-                        value={recibido}
-                        onChange={(event) => setRecibido(event.target.value)}
-                    />
-                    <p className="text-sm">Cambio: <strong>{metodo === "EFECTIVO" ? importe(cambio) : importe(0)}</strong></p>
+                    {metodo === "EFECTIVO" && (
+                        <>
+                            <Input
+                                label="Efectivo recibido (Bs)"
+                                autoFocus
+                                required
+                                type="number"
+                                min={montoCobroActual}
+                                step="0.01"
+                                value={recibido}
+                                onChange={(event) => setRecibido(event.target.value)}
+                            />
+                            <p className="text-sm">Cambio: <strong>{importe(cambio)}</strong></p>
+                        </>
+                    )}
                     <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-                        <Button type="button" variant="secondary" disabled={guardando} onClick={() => { setPedidoCobro(null); setSolicitudCobro(null); }}>Cancelar</Button>
+                        <Button type="button" variant="secondary" disabled={guardando} onClick={() => { setPedidoCobro(null); setSolicitudCobro(null); setMontoPago(""); setRecibido(""); }}>Cancelar</Button>
                         <Button type="submit" variant="success" loading={guardando}>Confirmar pago</Button>
                     </div>
                 </form>

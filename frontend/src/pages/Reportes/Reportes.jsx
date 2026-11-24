@@ -1,10 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import api from "../../api/axios";
-
-const fechaLocal = () => {
-  const fecha = new Date();
-  return `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, "0")}-${String(fecha.getDate()).padStart(2, "0")}`;
-};
+import fechaRestaurante from "../../utils/fechaRestaurante";
 
 const importe = (valor) => `Bs ${Number(valor || 0).toFixed(2)}`;
 const celdaCsv = (valor) => {
@@ -17,7 +13,7 @@ const escaparHtml = (valor) => String(valor ?? "").replace(/[&<>"']/g, (caracter
 }[caracter]));
 
 function Reportes() {
-  const hoy = fechaLocal();
+  const hoy = fechaRestaurante();
   const [desde, setDesde] = useState(hoy);
   const [hasta, setHasta] = useState(hoy);
   const [reporte, setReporte] = useState(null);
@@ -63,7 +59,7 @@ function Reportes() {
       ["PEDIDOS", ["ID pedido", "Fecha", "Cliente", "Tipo", "Estado", "Total", "Pagado"], reporte.pedidos.map((p) => [p.id_pedido, p.fecha, p.cliente, p.tipo_cliente, p.estado, p.total, p.pagado])],
       ["PRODUCCIÓN", ["Fecha", "Producto", "Categoría", "Preparados", "Comprometidos", "Disponibles"], reporte.produccion.map((p) => [p.fecha, p.nombre, p.categoria, p.preparados, p.comprometidos, p.disponibles])],
       ["ADICIONALES", ["ID solicitud", "ID pedido", "Fecha", "Cliente", "Estado", "Total"], reporte.adicionales.map((a) => [a.id_solicitud, a.id_pedido, a.fecha, a.cliente, a.estado, a.total])],
-      ["RESERVAS", ["ID reserva", "Fecha", "Hora", "Cliente", "Personas", "Estado"], reporte.reservas.map((r) => [r.id_reserva, r.fecha, r.hora, r.cliente, r.cantidad_personas, r.estado])],
+      ["RESERVAS DE PLATOS", ["ID reserva", "Fecha", "Hora", "Cliente", "Platos reservados", "Estado"], reporte.reservas.map((r) => [r.id_reserva, r.fecha, r.hora, r.cliente, r.cantidad_platos, r.estado])],
       ["MOVIMIENTOS PENSIONADOS", ["ID movimiento", "Fecha", "Cliente", "Producto", "Tipo", "Cantidad", "Saldo resultante", "Usuario"], reporte.movimientos_pensionados.map((m) => [m.id_movimiento, m.fecha, m.cliente, m.tipo_producto, m.tipo_movimiento, m.cantidad, m.saldo_resultante, m.usuario])],
     ];
     const lineas = [];
@@ -113,11 +109,11 @@ function Reportes() {
           <div class="card">Pedidos pagados: <strong>${escaparHtml(resumen.pedidos_pagados)}</strong></div>
           <div class="card">Ingresos confirmados: <strong>${importe(resumen.ingresos_confirmados)}</strong></div>
           <div class="card">Gastos: <strong>${importe(resumen.gastos)}</strong></div>
-          <div class="card">Reservas: <strong>${escaparHtml(resumen.reservas)}</strong></div>
+          <div class="card">Reservas de platos: <strong>${escaparHtml(resumen.reservas)}</strong></div>
         </div>
         <h2>Pedidos</h2><table><thead><tr><th>ID</th><th>Cliente</th><th>Tipo · Estado</th><th>Total</th></tr></thead><tbody>${pedidos}</tbody></table>
         <h2>Pagos</h2><table><thead><tr><th>ID</th><th>Cliente</th><th>Método · Estado</th><th>Monto</th></tr></thead><tbody>${pagos}</tbody></table>
-        <h2>Reservas</h2><table><thead><tr><th>ID</th><th>Cliente</th><th>Fecha y hora</th><th>Estado</th></tr></thead><tbody>${reservas}</tbody></table>
+        <h2>Reservas de platos</h2><table><thead><tr><th>ID</th><th>Cliente</th><th>Fecha y hora</th><th>Estado</th></tr></thead><tbody>${reservas}</tbody></table>
         <script>window.onload = () => window.print();</script>
       </body></html>`);
     ventana.document.close();
@@ -141,14 +137,14 @@ function Reportes() {
       </section>
       {cargando ? <p className="rounded-xl bg-white p-5 text-sm text-slate-500">Consultando…</p> : reporte && <>
         <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-          {[["Pedidos", resumen.pedidos], ["Pedidos pagados", resumen.pedidos_pagados], ["Ingresos confirmados", importe(resumen.ingresos_confirmados)], ["Gastos", importe(resumen.gastos)], ["Reservas", resumen.reservas]].map(([titulo, valor]) => <article key={titulo} className="rounded-2xl bg-white p-5 shadow-sm"><p className="text-sm text-slate-500">{titulo}</p><p className="mt-2 text-2xl font-black">{valor}</p></article>)}
+          {[["Pedidos", resumen.pedidos], ["Pedidos pagados", resumen.pedidos_pagados], ["Ingresos confirmados", importe(resumen.ingresos_confirmados)], ["Gastos", importe(resumen.gastos)], ["Reservas de platos", resumen.reservas]].map(([titulo, valor]) => <article key={titulo} className="rounded-2xl bg-white p-5 shadow-sm"><p className="text-sm text-slate-500">{titulo}</p><p className="mt-2 text-2xl font-black">{valor}</p></article>)}
         </section>
         <section className="grid gap-5 xl:grid-cols-2">
           <article className="rounded-2xl bg-white p-5 shadow-sm"><h2 className="text-xl font-black">Pagos</h2><div className="mt-3 overflow-x-auto"><table className="w-full min-w-[560px] text-left text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="p-2">Fecha</th><th className="p-2">Pedido</th><th className="p-2">Cliente</th><th className="p-2">Método</th><th className="p-2">Estado</th><th className="p-2">Monto</th></tr></thead><tbody className="divide-y">{reporte.pagos.map((p) => <tr key={p.id_pago}><td className="p-2">{new Date(p.fecha).toLocaleString()}</td><td className="p-2">#{p.id_pedido}</td><td className="p-2">{p.cliente}</td><td className="p-2">{p.metodo}</td><td className="p-2">{p.estado}</td><td className="p-2">{importe(p.monto)}</td></tr>)}</tbody></table></div></article>
           <article className="rounded-2xl bg-white p-5 shadow-sm"><h2 className="text-xl font-black">Gastos</h2><div className="mt-3 overflow-x-auto"><table className="w-full min-w-[480px] text-left text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="p-2">Fecha</th><th className="p-2">Concepto</th><th className="p-2">Método</th><th className="p-2">Total</th></tr></thead><tbody className="divide-y">{reporte.gastos.map((g) => <tr key={g.id_gasto}><td className="p-2">{new Date(g.fecha).toLocaleString()}</td><td className="p-2">{g.concepto}</td><td className="p-2">{g.metodo_pago}</td><td className="p-2">{importe(g.total)}</td></tr>)}</tbody></table></div></article>
           <article className="rounded-2xl bg-white p-5 shadow-sm"><h2 className="text-xl font-black">Producción diaria</h2><div className="mt-3 max-h-80 overflow-auto">{reporte.produccion.map((p, index) => <p key={`${p.fecha}-${p.id_producto}-${index}`} className="flex justify-between gap-3 border-t py-2 text-sm"><span>{String(p.fecha).slice(0, 10)} · {p.nombre} · {p.categoria}</span><span>{p.preparados} preparados · {p.comprometidos} comprometidos · {p.disponibles} libres</span></p>)}</div></article>
           <article className="rounded-2xl bg-white p-5 shadow-sm"><h2 className="text-xl font-black">Pedidos</h2><div className="mt-3 max-h-80 overflow-auto">{reporte.pedidos.map((p) => <p key={p.id_pedido} className="flex justify-between gap-3 border-t py-2 text-sm"><span>#{p.id_pedido} · {p.cliente} · {p.tipo_cliente} · {p.estado}</span><b>{importe(p.total)}</b></p>)}</div></article>
-          <article className="rounded-2xl bg-white p-5 shadow-sm"><h2 className="text-xl font-black">Reservas y adicionales</h2><div className="mt-3 max-h-80 overflow-auto">{reporte.reservas.map((r) => <p key={`r-${r.id_reserva}`} className="border-t py-2 text-sm">Reserva #{r.id_reserva} · {r.cliente} · {String(r.fecha).slice(0, 10)} {String(r.hora).slice(0, 5)} · {r.estado}</p>)}{reporte.adicionales.map((a) => <p key={`a-${a.id_solicitud}`} className="border-t py-2 text-sm">Adicional #{a.id_solicitud} · Pedido #{a.id_pedido} · {a.cliente} · {a.estado} · {importe(a.total)}</p>)}</div></article>
+          <article className="rounded-2xl bg-white p-5 shadow-sm"><h2 className="text-xl font-black">Reservas de platos y adicionales</h2><div className="mt-3 max-h-80 overflow-auto">{reporte.reservas.map((r) => <p key={`r-${r.id_reserva}`} className="border-t py-2 text-sm">Reserva de platos #{r.id_reserva} · {r.cliente} · {String(r.fecha).slice(0, 10)} {String(r.hora).slice(0, 5)} · {r.estado}</p>)}{reporte.adicionales.map((a) => <p key={`a-${a.id_solicitud}`} className="border-t py-2 text-sm">Adicional #{a.id_solicitud} · Pedido #{a.id_pedido} · {a.cliente} · {a.estado} · {importe(a.total)}</p>)}</div></article>
           <article className="rounded-2xl bg-white p-5 shadow-sm"><h2 className="text-xl font-black">Movimientos de pensionados</h2><div className="mt-3 max-h-80 overflow-auto">{reporte.movimientos_pensionados.map((m) => <p key={m.id_movimiento} className="border-t py-2 text-sm">{new Date(m.fecha).toLocaleString()} · {m.cliente} · {m.tipo_movimiento} de {m.cantidad} {m.tipo_producto} · saldo {m.saldo_resultante} · {m.usuario}</p>)}</div></article>
         </section>
       </>}

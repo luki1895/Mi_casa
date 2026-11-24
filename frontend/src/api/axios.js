@@ -1,4 +1,9 @@
 import axios from "axios";
+import {
+    AUTH_STORAGE_KEY,
+    isInvalidSessionResponse,
+    notifyInvalidSession,
+} from "../auth/sessionEvents";
 
 const baseURL = import.meta.env.VITE_API_URL
     || (import.meta.env.DEV
@@ -14,7 +19,7 @@ headers: {
 });
 
 api.interceptors.request.use((config) => {
-const usuarioGuardado = localStorage.getItem("mi_casa_usuario");
+const usuarioGuardado = localStorage.getItem(AUTH_STORAGE_KEY);
 
 if (usuarioGuardado) {
 try {
@@ -27,5 +32,20 @@ localStorage.removeItem("mi_casa_usuario");
 
 return config;
 });
+
+api.interceptors.response.use(
+    (response) => response,
+    (error) => {
+        if (
+            isInvalidSessionResponse(error)
+            && typeof window !== "undefined"
+            && window.localStorage.getItem(AUTH_STORAGE_KEY)
+        ) {
+            notifyInvalidSession();
+        }
+
+        return Promise.reject(error);
+    },
+);
 
 export default api;

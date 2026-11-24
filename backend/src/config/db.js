@@ -115,6 +115,9 @@ const pool = new Pool({
     ssl,
     connectionTimeoutMillis: 10000,
     max: 10,
+    onConnect: async (client) => {
+        await client.query("SET TIME ZONE 'America/La_Paz'");
+    },
 });
 
 export default pool;

@@ -11,16 +11,20 @@ function Productos() {
   const [cargando, setCargando] = useState(true);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
+  const [errorCatalogo, setErrorCatalogo] = useState("");
   const [aviso, setAviso] = useState("");
 
   const cargar = useCallback(async () => {
     setCargando(true);
     setError("");
+    setErrorCatalogo("");
     try {
       const { data } = await api.get("/productos");
       setProductos(data.data || []);
     } catch (requestError) {
-      setError(requestError.response?.data?.mensaje || "No se pudo cargar el catálogo de productos.");
+      const mensaje = requestError.response?.data?.mensaje || "No se pudo cargar el catálogo de productos.";
+      setErrorCatalogo(mensaje);
+      setError(mensaje);
     } finally {
       setCargando(false);
     }
@@ -30,10 +34,17 @@ function Productos() {
     let cancelado = false;
     api.get("/productos")
       .then(({ data }) => {
-        if (!cancelado) setProductos(data.data || []);
+        if (!cancelado) {
+          setProductos(data.data || []);
+          setErrorCatalogo("");
+        }
       })
       .catch((requestError) => {
-        if (!cancelado) setError(requestError.response?.data?.mensaje || "No se pudo cargar el catálogo de productos.");
+        if (!cancelado) {
+          const mensaje = requestError.response?.data?.mensaje || "No se pudo cargar el catálogo de productos.";
+          setErrorCatalogo(mensaje);
+          setError(mensaje);
+        }
       })
       .finally(() => {
         if (!cancelado) setCargando(false);
@@ -148,7 +159,7 @@ function Productos() {
             <table className="w-full min-w-[640px] text-left text-sm">
               <thead className="border-b bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="p-3">Nombre</th><th className="p-3">Categoría</th><th className="p-3">Descripción</th><th className="p-3">Estado</th><th className="p-3">Acciones</th></tr></thead>
               <tbody className="divide-y divide-slate-100">
-                {productos.length === 0 ? <tr><td colSpan="5" className="p-6 text-center text-slate-500">No hay productos registrados.</td></tr> : productos.map((producto) => (
+                {errorCatalogo ? <tr><td colSpan="5" className="p-6 text-center text-rose-700">No se pudo confirmar el catálogo.</td></tr> : productos.length === 0 ? <tr><td colSpan="5" className="p-6 text-center text-slate-500">No hay productos registrados.</td></tr> : productos.map((producto) => (
                   <tr key={producto.id_producto}>
                     <td className="p-3 font-semibold">{producto.nombre}</td>
                     <td className="p-3">{producto.categoria}</td>

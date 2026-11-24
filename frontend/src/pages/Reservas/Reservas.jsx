@@ -1,10 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import api from "../../api/axios";
-
-const fechaLocal = () => {
-  const fecha = new Date();
-  return `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, "0")}-${String(fecha.getDate()).padStart(2, "0")}`;
-};
+import fechaRestaurante from "../../utils/fechaRestaurante";
 
 const siguienteEstado = {
   PENDIENTE: ["CONFIRMADA", "CANCELADA"],
@@ -15,7 +11,7 @@ const siguienteEstado = {
 };
 
 function Reservas() {
-  const hoy = fechaLocal();
+  const hoy = fechaRestaurante();
   const [desde, setDesde] = useState(hoy);
   const [hasta, setHasta] = useState(hoy);
   const [estadoFiltro, setEstadoFiltro] = useState("");

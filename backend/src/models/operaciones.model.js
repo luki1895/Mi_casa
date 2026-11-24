@@ -1,5 +1,13 @@
 import pool from "../config/db.js";
+import fechaRestaurante from "../utils/fechaRestaurante.js";
 import produccionModel from "./produccion.model.js";
+
+const esImporteMonetarioValido = (importe) => {
+    const centavos = Math.round(importe * 100);
+    return Number.isFinite(importe)
+        && Number.isSafeInteger(centavos)
+        && Math.abs(importe * 100 - centavos) < 1e-7;
+};
 
 const agruparProductosSolicitados = (detalle) => {
     const cantidades = new Map();
@@ -30,8 +38,8 @@ const hayPagosEvento = async (db = pool) => {
 };
 
 const abrirCaja = async (datos, idUsuario) => {
-    const montoInicial = Number(datos.monto_inicial);
-    if (!Number.isFinite(montoInicial) || montoInicial < 0) {
+    const montoInicial = Number(datos?.monto_inicial);
+    if (!esImporteMonetarioValido(montoInicial) || montoInicial < 0) {
         throw Object.assign(new Error("El monto inicial debe ser válido y no negativo"), { status: 400 });
     }
     const client = await pool.connect();
@@ -39,35 +47,28 @@ const abrirCaja = async (datos, idUsuario) => {
         await client.query("BEGIN");
         await client.query("SELECT pg_advisory_xact_lock(hashtext('cierre-caja:' || CURRENT_DATE::text))");
         const cierre = await client.query("SELECT id_cierre FROM cierre_caja WHERE fecha::date=CURRENT_DATE LIMIT 1");
+        if (cierre.rowCount) {
+            throw Object.assign(new Error("La caja de hoy ya fue cerrada y no puede reabrirse"), { status: 409 });
+        }
         const aperturaActual = await client.query(
             "SELECT id_apertura, fecha, id_usuario, monto_inicial, abierta_en FROM apertura_caja WHERE fecha=CURRENT_DATE LIMIT 1 FOR UPDATE"
         );
 
-        if (aperturaActual.rowCount && !cierre.rowCount) {
+        if (aperturaActual.rowCount) {
             throw Object.assign(new Error("Ya existe una apertura de caja para hoy"), { status: 409 });
-        }
-
-        if (cierre.rowCount) {
-            await client.query("DELETE FROM cierre_caja WHERE fecha::date=CURRENT_DATE");
         }
 
         const apertura = await client.query(
             `INSERT INTO apertura_caja (id_usuario,monto_inicial)
              VALUES ($1,$2)
-             ON CONFLICT (fecha) DO UPDATE SET
-                id_usuario = EXCLUDED.id_usuario,
-                monto_inicial = EXCLUDED.monto_inicial,
-                abierta_en = NOW()
              RETURNING id_apertura,fecha,id_usuario,monto_inicial,abierta_en`,
             [idUsuario, montoInicial]
         );
 
-        if (!cierre.rowCount) {
-            await client.query(
-               "INSERT INTO caja (fecha,concepto,ingreso,egreso,saldo,id_usuario) VALUES (NOW(),'Apertura de caja',$1,0,$1,$2)",
-               [montoInicial,idUsuario]
-            );
-        }
+        await client.query(
+           "INSERT INTO caja (fecha,concepto,ingreso,egreso,saldo,id_usuario) VALUES (NOW(),'Apertura de caja',$1,0,$1,$2)",
+           [montoInicial,idUsuario]
+        );
         await client.query(
             "INSERT INTO bitacora_operaciones (id_usuario,accion,entidad,id_entidad,detalle) VALUES ($1,'ABRIR','caja',$2,$3)",
             [idUsuario,apertura.rows[0].id_apertura,JSON.stringify(apertura.rows[0])]
@@ -122,15 +123,15 @@ const listarPagos = async () => {
 };
 
 const registrarGasto = async (datos, idUsuario) => {
-    const concepto = String(datos.concepto || "").trim();
-    const descripcion = String(datos.descripcion || "").trim();
-    const total = Number(datos.total);
-    const cantidad = Number(datos.cantidad ?? 1);
-    const precioUnitario = Number(datos.precio_unitario ?? datos.total);
-    const metodoPago = String(datos.metodo_pago || "EFECTIVO").toUpperCase();
-    if (!concepto || !(total > 0) || !Number.isFinite(total)
+    const concepto = String(datos?.concepto || "").trim();
+    const descripcion = String(datos?.descripcion || "").trim();
+    const total = Number(datos?.total);
+    const cantidad = Number(datos?.cantidad ?? 1);
+    const precioUnitario = Number(datos?.precio_unitario ?? datos?.total);
+    const metodoPago = String(datos?.metodo_pago || "EFECTIVO").toUpperCase();
+    if (!concepto || !(total > 0) || !esImporteMonetarioValido(total)
         || !Number.isInteger(cantidad) || cantidad < 1
-        || !Number.isFinite(precioUnitario) || precioUnitario <= 0
+        || !esImporteMonetarioValido(precioUnitario) || precioUnitario <= 0
         || Math.abs(cantidad * precioUnitario - total) >= 0.01) {
         throw Object.assign(new Error("Indica un concepto y un importe mayor que cero"), { status: 400 });
     }
@@ -226,7 +227,7 @@ const reporteCaja = async () => {
         ),
     ]);
     return {
-        fecha: new Date().toISOString().slice(0, 10),
+        fecha: fechaRestaurante(),
         pagos: pagos.rows,
         gastos: gastos.rows,
         total_pagos: pagos.rows.reduce((sum, item) => sum + Number(item.total), 0),
@@ -234,7 +235,7 @@ const reporteCaja = async () => {
     };
 };
 
-const historialCaja = async (fecha = new Date().toISOString().slice(0, 10)) => {
+const historialCaja = async (fecha = fechaRestaurante()) => {
     const textoFecha = String(fecha);
     const parsedFecha = new Date(`${textoFecha}T00:00:00Z`);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(textoFecha)
@@ -311,13 +312,13 @@ const cerrarCaja = async (datos, idUsuario) => {
         }
         const saldo = await client.query("SELECT COALESCE(SUM(ingreso-egreso),0) AS total FROM caja WHERE fecha::date=CURRENT_DATE");
         const esperado = Number(saldo.rows[0].total);
-        const contado = Number(datos.monto_contado);
-        if (!Number.isFinite(contado) || contado < 0) throw Object.assign(new Error("El monto contado debe ser válido y no negativo"), { status: 400 });
+        const contado = Number(datos?.monto_contado);
+        if (!esImporteMonetarioValido(contado) || contado < 0) throw Object.assign(new Error("El monto contado debe ser válido y no negativo"), { status: 400 });
         const diferencia = contado - esperado;
         const cierre = await client.query(
             `INSERT INTO cierre_caja (id_usuario,saldo_esperado,monto_contado,diferencia,observaciones)
              VALUES ($1,$2,$3,$4,$5) RETURNING *`,
-            [idUsuario, esperado, contado, diferencia, String(datos.observaciones || "").trim() || null]
+            [idUsuario, esperado, contado, diferencia, String(datos?.observaciones || "").trim() || null]
         );
         await client.query(
             "INSERT INTO bitacora_operaciones (id_usuario,accion,entidad,id_entidad,detalle) VALUES ($1,'CERRAR','caja',$2,$3)",
@@ -333,7 +334,7 @@ const cerrarCaja = async (datos, idUsuario) => {
     }
 };
 
-const registrarPago = async (idPedido, datos, idUsuario) => {
+const registrarPago = async (idPedido, datos = {}, idUsuario) => {
     const client = await pool.connect();
     try {
         await client.query("BEGIN");
@@ -344,10 +345,16 @@ const registrarPago = async (idPedido, datos, idUsuario) => {
         if (String(pedido.estado).toUpperCase().startsWith("CANCEL")) throw Object.assign(new Error("No se puede cobrar un pedido cancelado"), { status: 409 });
         const sum = await client.query("SELECT COALESCE(SUM(monto),0) AS total FROM pago WHERE id_pedido=$1 AND estado='CONFIRMADO'", [idPedido]);
         const saldo = Math.max(Number(pedido.total) - Number(sum.rows[0].total), 0);
-        const monto = datos.monto == null ? saldo : Number(datos.monto);
-        const recibido = Number(datos.recibido);
-        const metodo = String(datos.metodo || "EFECTIVO").toUpperCase();
-        if (!(monto > 0) || monto > saldo || !Number.isFinite(recibido) || recibido < monto) {
+        const monto = datos?.monto == null ? saldo : Number(datos.monto);
+        const recibido = Number(datos?.recibido);
+        const metodo = String(datos?.metodo || "EFECTIVO").toUpperCase();
+        if (
+            !(monto > 0)
+            || !esImporteMonetarioValido(monto)
+            || monto > saldo
+            || !esImporteMonetarioValido(recibido)
+            || recibido < monto
+        ) {
             throw Object.assign(new Error("El importe recibido debe cubrir el cobro y no superar el saldo pendiente"), { status: 400 });
         }
         if (!["EFECTIVO", "TARJETA", "TRANSFERENCIA", "QR"].includes(metodo)) throw Object.assign(new Error("Método de pago no válido"), { status: 400 });
@@ -383,7 +390,7 @@ const agregarDetallePedido = async (idPedido, datos, idUsuario) => {
     if (!Array.isArray(datos.detalle) || !datos.detalle.length) {
         throw Object.assign(new Error("Agrega al menos un producto al pedido"), { status: 400 });
     }
-    const fecha = new Date().toISOString().slice(0, 10);
+    const fecha = fechaRestaurante();
     const client = await pool.connect();
     try {
         await client.query("BEGIN");
@@ -451,7 +458,7 @@ const crearAdicional = async (idPedido, datos, idMesero) => {
     if (!Array.isArray(datos.detalle) || !datos.detalle.length) {
         throw Object.assign(new Error("Agrega al menos un producto adicional"), { status: 400 });
     }
-    const fecha = new Date().toISOString().slice(0, 10);
+    const fecha = fechaRestaurante();
     const client = await pool.connect();
     try {
         await client.query("BEGIN");
@@ -493,11 +500,11 @@ const crearAdicional = async (idPedido, datos, idMesero) => {
     }
 };
 
-const cobrarAdicional = async (idSolicitud, datos, idUsuario) => {
+const cobrarAdicional = async (idSolicitud, datos = {}, idUsuario) => {
     const client = await pool.connect();
     try {
         await client.query("BEGIN");
-        const fecha = new Date().toISOString().slice(0, 10);
+        const fecha = fechaRestaurante();
         await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`menu:${fecha}`]);
         await verificarCajaAbierta(client);
         const solicitudResult = await client.query("SELECT * FROM solicitud_adicional WHERE id_solicitud=$1 FOR UPDATE", [idSolicitud]);
@@ -505,10 +512,14 @@ const cobrarAdicional = async (idSolicitud, datos, idUsuario) => {
             throw Object.assign(new Error("La solicitud no está pendiente de cobro"), { status: 409 });
         }
         const solicitud = solicitudResult.rows[0];
-        const recibido = Number(datos.recibido);
+        const recibido = Number(datos?.recibido);
         const total = Number(solicitud.total);
-        const metodo = String(datos.metodo || "EFECTIVO").toUpperCase();
-        if (!Number.isFinite(recibido) || recibido < total) throw Object.assign(new Error("El importe recibido no cubre el adicional"), { status: 400 });
+        const metodo = String(datos?.metodo || "EFECTIVO").toUpperCase();
+        if (
+            !esImporteMonetarioValido(recibido)
+            || !esImporteMonetarioValido(total)
+            || recibido < total
+        ) throw Object.assign(new Error("El importe recibido no cubre el adicional"), { status: 400 });
         if (!["EFECTIVO", "TARJETA", "TRANSFERENCIA", "QR"].includes(metodo)) throw Object.assign(new Error("Método de pago no válido"), { status: 400 });
         const pago = await client.query(
             `INSERT INTO pago (id_pedido,id_usuario,monto,metodo,recibido,cambio)

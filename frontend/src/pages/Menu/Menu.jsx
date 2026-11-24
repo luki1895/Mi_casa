@@ -13,8 +13,11 @@ function Menu() {
       .then(({ data }) => {
         if (!cancelado) setProductos(data.data || []);
       })
-      .catch(() => {
-        if (!cancelado) setError("No se pudo cargar el menú del día desde el backend.");
+      .catch((requestError) => {
+        if (!cancelado) {
+          setProductos([]);
+          setError(requestError.response?.data?.mensaje || "No se pudo cargar el menú del día desde el backend.");
+        }
       })
       .finally(() => {
         if (!cancelado) setCargando(false);
@@ -36,6 +39,8 @@ function Menu() {
 
         {cargando ? (
           <p className="text-sm text-gray-500">Cargando menú...</p>
+        ) : error ? (
+          <p role="status" className="text-sm text-gray-500">No se puede confirmar la disponibilidad del menú.</p>
         ) : (
           <div className="divide-y">
             {productos.length === 0 ? (
@@ -49,7 +54,12 @@ function Menu() {
                   </div>
                   <div className="text-right">
                     <div className="font-bold text-lg">Bs {Number(producto.precio || 0).toFixed(2)}</div>
-                    <div className="text-xs text-gray-500">Stock: {producto.stock ?? 0}</div>
+                    <div className="text-xs text-gray-500">
+                      Stock: {producto.stock === null || producto.stock === undefined || producto.stock === ""
+                        || !Number.isFinite(Number(producto.stock))
+                        ? "No disponible"
+                        : Number(producto.stock)}
+                    </div>
                   </div>
                 </div>
               ))

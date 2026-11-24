@@ -1,17 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import api from "../../api/axios";
-
-const fechaLaPaz = () => {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/La_Paz",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(new Date());
-  const values = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
-  return `${values.year}-${values.month}-${values.day}`;
-};
+import fechaRestaurante from "../../utils/fechaRestaurante";
 
 const services = [
   "Cocina casera y artesanal",
@@ -24,7 +14,7 @@ function LandingPage() {
   const [menuError, setMenuError] = useState("");
 
   useEffect(() => {
-    api.get("/menu", { params: { fecha: fechaLaPaz() } })
+    api.get("/menu", { params: { fecha: fechaRestaurante() } })
       .then(({ data }) => setMenu(data.data || []))
       .catch((error) => setMenuError(error.response?.data?.mensaje || "No se pudo cargar el menú."));
   }, []);

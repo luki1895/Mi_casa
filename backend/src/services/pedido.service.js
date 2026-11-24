@@ -7,8 +7,9 @@ import pool from "../config/db.js";
 import produccionModel from "../models/produccion.model.js";
 
 import clienteModel from "../models/cliente.model.js";
-
 import operacionesModel from "../models/operaciones.model.js";
+import { normalizarRol } from "../middlewares/autorizarRoles.js";
+import fechaRestaurante from "../utils/fechaRestaurante.js";
 
 const listar=()=>pedidoModel.listar();
 
@@ -26,19 +27,25 @@ const solicitarAdicional=(idPedido,datos,idMesero)=>operacionesModel.crearAdicio
 
 const agregarDetalle=(idPedido,datos,idUsuario)=>operacionesModel.agregarDetallePedido(idPedido,datos,idUsuario);
 
-const crear=async(datos, idUsuario, rol)=>{
+const crear=async(datos = {}, idUsuario, rol)=>{
+	if (!datos || typeof datos !== "object" || Array.isArray(datos)) {
+		throw Object.assign(new Error("Los datos del pedido no son válidos"), { status: 400 });
+	}
 	const eventual = String(datos.tipo_cliente || "").toUpperCase() === "EVENTUAL";
 	if ((!datos.id_cliente && !(eventual && String(datos.cliente_nombre || "").trim())) || !Array.isArray(datos.detalle) || datos.detalle.length === 0) {
-		throw new Error("El pedido debe incluir un cliente válido y al menos un plato");
+		throw Object.assign(new Error("El pedido debe incluir un cliente válido y al menos un plato"), { status: 400 });
 	}
 
-	const fecha = datos.fecha || new Date().toISOString().slice(0, 10);
+	const fecha = datos.fecha || fechaRestaurante();
 	const cantidades = new Map();
 	datos.detalle.forEach((item) => {
+		if (!item || typeof item !== "object" || Array.isArray(item)) {
+			throw Object.assign(new Error("El detalle del pedido contiene datos inválidos"), { status: 400 });
+		}
 		const cantidad = Number(item.cantidad);
 		const idProducto = Number(item.id_producto);
 		if (!Number.isInteger(cantidad) || cantidad < 1 || !Number.isInteger(idProducto) || idProducto < 1) {
-			throw new Error("El detalle del pedido contiene datos inválidos");
+			throw Object.assign(new Error("El detalle del pedido contiene datos inválidos"), { status: 400 });
 		}
 		cantidades.set(idProducto, (cantidades.get(idProducto) || 0) + cantidad);
 	});
@@ -47,7 +54,7 @@ const crear=async(datos, idUsuario, rol)=>{
 	const client = await pool.connect();
 	try {
 		await client.query("BEGIN");
-		if (String(rol || "").trim().toLowerCase().includes("caja")) {
+		if (normalizarRol(rol) === "caja") {
 			await operacionesModel.verificarCajaAbierta(client);
 		}
 		await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`menu:${fecha}`]);
@@ -79,7 +86,9 @@ const crear=async(datos, idUsuario, rol)=>{
 			"SELECT id_cliente, tipo_cliente FROM cliente WHERE id_cliente = $1 FOR SHARE",
 			[idCliente]
 		);
-		if (!clienteResult.rowCount) throw new Error("El cliente seleccionado no existe");
+		if (!clienteResult.rowCount) {
+			throw Object.assign(new Error("El cliente seleccionado no existe"), { status: 404 });
+		}
 
 		const menu = await produccionModel.listarMenu(fecha, client, true);
 		const detalle = detalleSolicitado.map((item) => {
@@ -112,7 +121,6 @@ const crear=async(datos, idUsuario, rol)=>{
 		return { id_pedido: idPedido, total, mensaje: "Pedido registrado" };
 	} catch (error) {
 		await client.query("ROLLBACK");
-		if (!error.status) error.status = 400;
 		throw error;
 	} finally {
 		client.release();

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../../api/axios";
+import fechaRestaurante from "../../utils/fechaRestaurante";
 import useAuth from "../../hooks/useAuth";
 import { Alert, Badge, Button, Card, ConfirmModal, Input, Select, Textarea } from "../../components/ui";
 import MesaBoard from "../../components/MesaBoard";
@@ -199,7 +200,7 @@ function Mesero() {
                 cliente_nombre: tipoCliente === "EVENTUAL" ? nombreEventual.trim() : undefined,
                 cliente_telefono: tipoCliente === "EVENTUAL" ? telefonoEventual.trim() : undefined,
                 id_atencion: pedidoMesaId ? Number(pedidoMesaId) : undefined,
-                fecha: new Date().toISOString().slice(0, 10),
+                fecha: fechaRestaurante(),
                 observaciones: observacionesPedido.trim(),
                 total,
                 detalle,

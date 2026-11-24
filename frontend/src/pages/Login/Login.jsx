@@ -143,13 +143,11 @@ function Login() {
                         {showRecovery && (
                             <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-slate-700">
                                 <p className="font-semibold text-slate-900">Recuperación de contraseña</p>
-                                <p className="mt-2">Contacta al administrador del sistema para restablecer tu acceso.</p>
-                                <a
-                                    href="mailto:luki.189511@gmail.com?subject=Recuperaci%C3%B3n%20de%20contrase%C3%B1a%20Mi%20Casa"
-                                    className="mt-3 inline-block font-semibold text-amber-700 underline underline-offset-2"
-                                >
-                                    Enviar correo de recuperación
-                                </a>
+                                <p className="mt-2">
+                                    No hay recuperación automática habilitada. Un administrador con acceso puede
+                                    restablecer la contraseña desde Usuarios. Si no hay otro administrador disponible,
+                                    solicita una recuperación autorizada al responsable del sistema.
+                                </p>
                             </div>
                         )}
 

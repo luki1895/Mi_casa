@@ -1,4 +1,5 @@
 import pool from "../config/db.js";
+import { normalizarRol } from "../middlewares/autorizarRoles.js";
 
 const listar=async()=>{
 
@@ -100,8 +101,11 @@ const registrarImpresion = async (idPedido, idUsuario, idSolicitud = null) => {
 	try {
 		await client.query("BEGIN");
 		const pedidoResult = await client.query(
-			`SELECT p.id_pedido,p.pagado,p.estado,c.nombre AS cliente,p.fecha,p.observaciones
+			`SELECT p.id_pedido,p.id_atencion,m.numero AS mesa,p.pagado,p.estado,
+			        c.nombre AS cliente,p.fecha,p.observaciones,p.total
 			 FROM pedido p INNER JOIN cliente c ON c.id_cliente=p.id_cliente
+			 LEFT JOIN atencion_mesa a ON a.id_atencion=p.id_atencion
+			 LEFT JOIN mesa m ON m.id_mesa=a.id_mesa
 			 WHERE p.id_pedido=$1 FOR UPDATE OF p`,
 			[idPedido],
 		);
@@ -111,10 +115,11 @@ const registrarImpresion = async (idPedido, idUsuario, idSolicitud = null) => {
 
 		let detalle;
 		let observaciones = pedido.observaciones;
+		let total = Number(pedido.total);
 		let tipo = "PEDIDO";
 		if (idSolicitud !== null && idSolicitud !== undefined) {
 			const solicitud = await client.query(
-				`SELECT id_solicitud,estado,observaciones
+				`SELECT id_solicitud,estado,observaciones,total
 				 FROM solicitud_adicional
 				 WHERE id_solicitud=$1 AND id_pedido=$2 FOR UPDATE`,
 				[idSolicitud,idPedido],
@@ -130,6 +135,7 @@ const registrarImpresion = async (idPedido, idUsuario, idSolicitud = null) => {
 			);
 			detalle = lineas.rows;
 			observaciones = solicitud.rows[0].observaciones;
+			total = Number(solicitud.rows[0].total);
 			tipo = "ADICIONAL";
 		} else {
 			const lineas = await client.query(
@@ -157,7 +163,7 @@ const registrarImpresion = async (idPedido, idUsuario, idSolicitud = null) => {
 			[idUsuario,esReimpresion ? "REIMPRIMIR" : "IMPRIMIR",String(idPedido),JSON.stringify({ tipo,id_solicitud:idSolicitud == null ? "" : String(idSolicitud) })],
 		);
 		await client.query("COMMIT");
-		return { ...pedido, detalle, observaciones, tipo, id_solicitud:idSolicitud, es_reimpresion:esReimpresion };
+		return { ...pedido, total, detalle, observaciones, tipo, id_solicitud:idSolicitud, es_reimpresion:esReimpresion };
 	} catch (error) {
 		await client.query("ROLLBACK");
 		throw error;
@@ -171,7 +177,7 @@ const actualizarEstado = async (idPedido, estado, idUsuario, rol) => {
 	if (!["PENDIENTE", "EN_PREPARACION", "LISTO", "ENTREGADO", "CANCELADO"].includes(nuevoEstado)) {
 		throw Object.assign(new Error("Estado de pedido no válido"), { status: 400 });
 	}
-	if (String(rol || "").trim().toLowerCase().includes("mesero") && nuevoEstado !== "ENTREGADO") {
+	if (normalizarRol(rol) === "mesero" && nuevoEstado !== "ENTREGADO") {
 		throw Object.assign(new Error("El mesero solo puede marcar pedidos listos como entregados"), { status: 403 });
 	}
 	const client = await pool.connect();

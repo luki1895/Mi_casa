@@ -2,11 +2,13 @@
 import bcrypt from "bcrypt";
 import authModel from "../models/auth.model.js";
 import { normalizarRol } from "../middlewares/autorizarRoles.js";
+import validarCredenciales from "../utils/validarCredenciales.js";
 
 const rolesPermitidos = new Set(["admin", "caja", "mesero", "cliente"]);
 
 const login = async (datos) => {
-    const usuario = await authModel.buscarUsuario(datos.usuario);
+    const credenciales = validarCredenciales(datos);
+    const usuario = await authModel.buscarUsuario(credenciales.usuario);
 
     if (!usuario) {
         throw Object.assign(new Error("Usuario o contraseña incorrectos"), { status: 401 });
@@ -21,7 +23,7 @@ const login = async (datos) => {
         throw Object.assign(new Error("El usuario está desactivado"), { status: 403 });
     }
 
-    const valido = await bcrypt.compare(datos.password, usuario.password);
+    const valido = await bcrypt.compare(credenciales.password, usuario.password);
 
     if (!valido) {
         throw Object.assign(new Error("Usuario o contraseña incorrectos"), { status: 401 });

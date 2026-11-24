@@ -1,18 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import api from "../../api/axios";
+import fechaRestaurante from "../../utils/fechaRestaurante";
 
-const fechaLaPaz = () => {
-    const parts = new Intl.DateTimeFormat("en-CA", {
-        timeZone: "America/La_Paz",
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-    }).formatToParts(new Date());
-    const values = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
-    return `${values.year}-${values.month}-${values.day}`;
-};
 const fechaMinima = () => {
-    const [year, month, day] = fechaLaPaz().split("-").map(Number);
+    const [year, month, day] = fechaRestaurante().split("-").map(Number);
     const manana = new Date(Date.UTC(year, month - 1, day + 1));
     return manana.toISOString().slice(0, 10);
 };

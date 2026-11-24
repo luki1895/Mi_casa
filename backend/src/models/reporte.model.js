@@ -28,7 +28,7 @@ const operativo = async (desde, hasta) => {
                 (SELECT COUNT(*)::int FROM pedido WHERE fecha >= $1::date AND fecha < $2::date + INTERVAL '1 day' AND pagado IS TRUE) AS pedidos_pagados,
                 (SELECT COALESCE(SUM(monto),0) FROM pago WHERE fecha >= $1::date AND fecha < $2::date + INTERVAL '1 day' AND estado='CONFIRMADO') AS ingresos_confirmados,
                 (SELECT COALESCE(SUM(total),0) FROM gasto WHERE fecha >= $1::date AND fecha < $2::date + INTERVAL '1 day') AS gastos,
-                (SELECT COUNT(*)::int FROM reserva WHERE fecha BETWEEN $1::date AND $2::date) AS reservas`,
+                (SELECT COUNT(*)::int FROM reserva_plato WHERE fecha BETWEEN $1::date AND $2::date) AS reservas`,
             [inicio, fin],
         ),
         pool.query(
@@ -59,35 +59,40 @@ const operativo = async (desde, hasta) => {
             [inicio, fin],
         ),
         pool.query(
-            `SELECT pd.fecha,producto.id_producto,producto.nombre,producto.categoria,
+            `WITH unidades AS (
+                SELECT pd.fecha,unidades.id_producto,SUM(unidades.preparados) AS preparados
+                FROM produccion_diaria pd
+                CROSS JOIN LATERAL (VALUES
+                    (pd.id_sopa,pd.cantidad_sopa),
+                    (pd.id_segundo1,pd.cantidad_segundo1),
+                    (pd.id_segundo2,pd.cantidad_segundo2),
+                    (pd.id_entrada,pd.cantidad_entrada),
+                    (pd.id_refresco,pd.cantidad_refresco),
+                    (pd.id_plato_extra,pd.cantidad_extra)
+                ) AS unidades(id_producto,preparados)
+                WHERE pd.fecha BETWEEN $1::date AND $2::date
+                GROUP BY pd.fecha,unidades.id_producto
+             )
+             SELECT unidades.fecha,producto.id_producto,producto.nombre,producto.categoria,
                     unidades.preparados,
                     COALESCE(SUM(dp.cantidad) FILTER (WHERE UPPER(p.estado) NOT LIKE 'CANCEL%'),0)
                         + adicionales.cantidad AS comprometidos,
                     adicionales.cantidad AS adicionales_pendientes,
                     GREATEST(unidades.preparados-COALESCE(SUM(dp.cantidad) FILTER (WHERE UPPER(p.estado) NOT LIKE 'CANCEL%'),0)
                         - adicionales.cantidad,0) AS disponibles
-             FROM produccion_diaria pd
-             CROSS JOIN LATERAL (VALUES
-                (pd.id_sopa,pd.cantidad_sopa),
-                (pd.id_segundo1,pd.cantidad_segundo1),
-                (pd.id_segundo2,pd.cantidad_segundo2),
-                (pd.id_entrada,pd.cantidad_entrada),
-                (pd.id_refresco,pd.cantidad_refresco),
-                (pd.id_plato_extra,pd.cantidad_extra)
-             ) AS unidades(id_producto,preparados)
+             FROM unidades
              INNER JOIN producto ON producto.id_producto=unidades.id_producto
              LEFT JOIN detalle_pedido dp ON dp.id_producto=producto.id_producto
-             LEFT JOIN pedido p ON p.id_pedido=dp.id_pedido AND p.fecha::date=pd.fecha
+             LEFT JOIN pedido p ON p.id_pedido=dp.id_pedido AND p.fecha::date=unidades.fecha
              LEFT JOIN LATERAL (
                 SELECT COALESCE(SUM((item->>'cantidad')::integer),0) AS cantidad
                 FROM solicitud_adicional sa
                 CROSS JOIN LATERAL jsonb_array_elements(sa.detalle) item
-                WHERE sa.estado='PENDIENTE' AND sa.fecha::date=pd.fecha
+                WHERE sa.estado='PENDIENTE' AND sa.fecha::date=unidades.fecha
                   AND (item->>'id_producto')::bigint=producto.id_producto
              ) adicionales ON TRUE
-             WHERE pd.fecha BETWEEN $1::date AND $2::date
-             GROUP BY pd.fecha,producto.id_producto,producto.nombre,producto.categoria,unidades.preparados,adicionales.cantidad
-             ORDER BY pd.fecha,producto.categoria,producto.nombre`,
+             GROUP BY unidades.fecha,producto.id_producto,producto.nombre,producto.categoria,unidades.preparados,adicionales.cantidad
+             ORDER BY unidades.fecha,producto.categoria,producto.nombre`,
             [inicio, fin],
         ),
         pool.query(
@@ -99,9 +104,12 @@ const operativo = async (desde, hasta) => {
             [inicio, fin],
         ),
         pool.query(
-            `SELECT r.id_reserva,r.fecha,r.hora,r.cantidad_personas,r.estado,c.nombre AS cliente
-             FROM reserva r INNER JOIN cliente c ON c.id_cliente=r.id_cliente
+            `SELECT r.id_reserva,r.fecha,r.hora,r.estado,r.nombre_cliente AS cliente,
+                    COALESCE(SUM(dr.cantidad),0)::int AS cantidad_platos
+             FROM reserva_plato r
+             LEFT JOIN detalle_reserva_plato dr ON dr.id_reserva=r.id_reserva
              WHERE r.fecha BETWEEN $1::date AND $2::date
+             GROUP BY r.id_reserva,r.fecha,r.hora,r.estado,r.nombre_cliente
              ORDER BY r.fecha,r.hora,r.id_reserva`,
             [inicio, fin],
         ),
