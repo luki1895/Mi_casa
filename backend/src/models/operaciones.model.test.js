@@ -33,6 +33,7 @@ test("un pago parcial respeta el saldo y calcula el vuelto en la misma transacci
     const client = {
         async query(sql, params) {
             queries.push(sql);
+            if (sql.includes("FROM idempotencia_operacion")) return { rows: [], rowCount: 0 };
             if (sql.includes("FROM apertura_caja")) return { rows: [{ id_apertura: 1 }], rowCount: 1 };
             if (sql.startsWith("SELECT id_pedido,total,pagado,estado")) {
                 return { rows: [{ id_pedido: 8, total: "10.00", pagado: false, estado: "PENDIENTE" }], rowCount: 1 };
@@ -55,6 +56,7 @@ test("un pago parcial respeta el saldo y calcula el vuelto en la misma transacci
         8,
         { monto: 2.25, recibido: 3, metodo: "EFECTIVO" },
         2,
+        "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
     );
 
     assert.deepEqual(pagoParams, [8, 2, 2.25, "EFECTIVO", 3, 0.75]);
@@ -69,6 +71,7 @@ test("un pago que cubre el saldo marca el pedido como pagado", async (context) =
     const client = {
         async query(sql) {
             queries.push(sql);
+            if (sql.includes("FROM idempotencia_operacion")) return { rows: [], rowCount: 0 };
             if (sql.includes("FROM apertura_caja")) return { rows: [{ id_apertura: 1 }], rowCount: 1 };
             if (sql.startsWith("SELECT id_pedido,total,pagado,estado")) {
                 return { rows: [{ id_pedido: 8, total: "10.00", pagado: false, estado: "PENDIENTE" }], rowCount: 1 };
@@ -85,6 +88,7 @@ test("un pago que cubre el saldo marca el pedido como pagado", async (context) =
         8,
         { monto: 10, recibido: 10, metodo: "TARJETA" },
         2,
+        "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
     );
 
     assert.equal(pago.pedido_pagado, true);
@@ -97,6 +101,7 @@ test("rechaza pagos con fracciones menores a un centavo antes de insertar", asyn
     const client = {
         async query(sql) {
             queries.push(sql);
+            if (sql.includes("FROM idempotencia_operacion")) return { rows: [], rowCount: 0 };
             if (sql.includes("FROM apertura_caja")) return { rows: [{ id_apertura: 1 }], rowCount: 1 };
             if (sql.startsWith("SELECT id_pedido,total,pagado,estado")) {
                 return { rows: [{ id_pedido: 8, total: "10.00", pagado: false, estado: "PENDIENTE" }], rowCount: 1 };
@@ -109,7 +114,7 @@ test("rechaza pagos con fracciones menores a un centavo antes de insertar", asyn
     context.mock.method(pool, "connect", async () => client);
 
     await assert.rejects(
-        operacionesModel.registrarPago(8, { monto: 1.001, recibido: 1.01, metodo: "EFECTIVO" }, 2),
+        operacionesModel.registrarPago(8, { monto: 1.001, recibido: 1.01, metodo: "EFECTIVO" }, 2, "ffffffff-ffff-4fff-8fff-ffffffffffff"),
         (error) => error.status === 400,
     );
 

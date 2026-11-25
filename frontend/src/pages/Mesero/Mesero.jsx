@@ -1,13 +1,15 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../../api/axios";
 import fechaRestaurante from "../../utils/fechaRestaurante";
 import useAuth from "../../hooks/useAuth";
-import { Alert, Badge, Button, Card, ConfirmModal, Input, Select, Textarea } from "../../components/ui";
+import { Alert, Badge, Button, Card, Input, Select, Textarea } from "../../components/ui";
 import MesaBoard from "../../components/MesaBoard";
 import MesaAtencionDetail from "../../components/MesaAtencionDetail";
 import MesaOrderProductAdder from "../../components/MesaOrderProductAdder";
 import useMesaBoardData from "../../hooks/useMesaBoardData";
+import claveDeIdempotencia from "../../utils/idempotency";
+import { claveDetalleVenta, inventarioAgotado, precioConfigurado, serializarDetalleVenta } from "../../utils/detalleVenta";
 
 const menuDemo = [
     { id_producto: 1, nombre: "Silpancho", categoria: "Segundo", precio: 15, stock: 30 },
@@ -33,7 +35,6 @@ function Mesero() {
     const [servicios, setServicios] = useState([]);
     const [pedidosActivos, setPedidosActivos] = useState([]);
     const [mesaSeleccionadaId, setMesaSeleccionadaId] = useState(null);
-    const [atencionParaCerrar, setAtencionParaCerrar] = useState(null);
     const [pedidoSeleccionado, setPedidoSeleccionado] = useState(null);
     const [carrito, setCarrito] = useState([]);
     const [idCliente, setIdCliente] = useState("");
@@ -48,6 +49,9 @@ function Mesero() {
     const [guardando, setGuardando] = useState(false);
     const [error, setError] = useState("");
     const [aviso, setAviso] = useState("");
+    const idempotenciaPedidoRef = useRef(null);
+    const idempotenciaDetalleRef = useRef(null);
+    const idempotenciaAdicionalRef = useRef(null);
     const {
         mesas,
         atenciones,
@@ -145,26 +149,31 @@ function Mesero() {
 
     const agregarPlato = (plato) => {
         setAviso("");
-        const existente = carrito.find((item) => item.id_producto === plato.id_producto);
-        if (plato.stock !== undefined && (existente?.cantidad || 0) >= Number(plato.stock)) {
+        if (!precioConfigurado(plato)) {
+            setAviso(`El precio de ${plato.nombre} todavía no está configurado por administración.`);
+            return;
+        }
+        const key = claveDetalleVenta(plato);
+        const existente = carrito.find((item) => claveDetalleVenta(item) === key);
+        if (inventarioAgotado(plato, existente?.cantidad || 0)) {
             setAviso(`No hay más unidades disponibles de ${plato.nombre}.`);
             return;
         }
 
         setCarrito((actual) => {
-            const yaAgregado = actual.some((item) => item.id_producto === plato.id_producto);
+            const yaAgregado = actual.some((item) => claveDetalleVenta(item) === key);
             return yaAgregado
-                ? actual.map((item) => item.id_producto === plato.id_producto
+                ? actual.map((item) => claveDetalleVenta(item) === key
                     ? { ...item, cantidad: item.cantidad + 1 }
                     : item)
                 : [...actual, { ...plato, cantidad: 1 }];
         });
     };
 
-    const cambiarCantidad = (idProducto, delta) => {
+    const cambiarCantidad = (key, delta) => {
         setCarrito((actual) => actual
-            .map((item) => item.id_producto === idProducto
-                ? { ...item, cantidad: Math.min(Number(item.stock ?? Infinity), item.cantidad + delta) }
+            .map((item) => claveDetalleVenta(item) === key
+                ? { ...item, cantidad: item.stock == null ? item.cantidad + delta : Math.min(Number(item.stock), item.cantidad + delta) }
                 : item)
             .filter((item) => item.cantidad > 0));
     };
@@ -187,13 +196,7 @@ function Mesero() {
 
         setGuardando(true);
         try {
-            const detalle = carrito.map((item) => ({
-                id_producto: item.id_producto,
-                nombre: item.nombre,
-                cantidad: item.cantidad,
-                precio: Number(item.precio),
-                subtotal: Number(item.precio) * item.cantidad,
-            }));
+            const detalle = carrito.map(serializarDetalleVenta);
             const pedido = {
                 id_cliente: cliente?.id_cliente,
                 tipo_cliente: tipoCliente === "EVENTUAL" ? "EVENTUAL" : cliente.tipo_cliente,
@@ -219,7 +222,11 @@ function Mesero() {
                 setServicios(nuevosServicios);
                 setPedidosActivos(nuevosServicios.filter((pedido) => !["ENTREGADO", "CANCELADO"].includes(pedido.estado)));
             } else {
-                await api.post("/pedidos", pedido);
+                const solicitudId = claveDeIdempotencia(idempotenciaPedidoRef, pedido);
+                await api.post("/pedidos", pedido, {
+                    headers: { "Idempotency-Key": solicitudId },
+                });
+                idempotenciaPedidoRef.current = null;
                 await refrescarDatosOperativos(pedidoMesaId);
             }
 
@@ -252,10 +259,26 @@ function Mesero() {
         setGuardando(true);
         try {
             if (pedidoSeleccionado.pagado) {
-                await api.post(`/pedidos/${pedidoSeleccionado.id_pedido}/adicionales`, cambios);
+                const solicitudId = claveDeIdempotencia(idempotenciaAdicionalRef, {
+                    operacion: "CREAR_ADICIONAL",
+                    id_pedido: pedidoSeleccionado.id_pedido,
+                    ...cambios,
+                });
+                await api.post(`/pedidos/${pedidoSeleccionado.id_pedido}/adicionales`, cambios, {
+                    headers: { "Idempotency-Key": solicitudId },
+                });
+                idempotenciaAdicionalRef.current = null;
                 setAviso("Solicitud enviada a Caja para confirmar el cobro y emitir una nueva comanda.");
             } else {
-                await api.post(`/pedidos/${pedidoSeleccionado.id_pedido}/detalle`, cambios);
+                const solicitudId = claveDeIdempotencia(idempotenciaDetalleRef, {
+                    operacion: "AGREGAR_DETALLE_PEDIDO",
+                    id_pedido: pedidoSeleccionado.id_pedido,
+                    ...cambios,
+                });
+                await api.post(`/pedidos/${pedidoSeleccionado.id_pedido}/detalle`, cambios, {
+                    headers: { "Idempotency-Key": solicitudId },
+                });
+                idempotenciaDetalleRef.current = null;
                 setAviso("Productos agregados al pedido pendiente.");
             }
             const idAtencionActual = pedidoSeleccionado.id_atencion || detalleAtencionSeleccionada?.id_atencion;
@@ -298,25 +321,6 @@ function Mesero() {
     );
     const pedidosListos = pedidosActivos.filter((pedido) => String(pedido.estado).toUpperCase() === "LISTO").length;
     const platosDisponibles = menu.filter((plato) => Number(plato.stock) > 0).length;
-
-    const cerrarAtencion = async () => {
-        if (!atencionParaCerrar) return;
-        setGuardando(true);
-        setError("");
-        setAviso("");
-        try {
-            await api.post(`/atenciones-mesa/${atencionParaCerrar.id_atencion}/cerrar`);
-            setAviso(`Atención de la mesa ${atencionParaCerrar.mesa} cerrada.`);
-            setAtencionParaCerrar(null);
-            setMesaSeleccionadaId(null);
-            clearAtencion();
-            await Promise.all([cargarDatos(), refrescarMesas(true)]);
-        } catch (requestError) {
-            setError(requestError.response?.data?.mensaje || "No se pudo cerrar la atención. Verifica los pedidos y pagos confirmados.");
-        } finally {
-            setGuardando(false);
-        }
-    };
 
     const fechaHoy = new Intl.DateTimeFormat("es", {
         weekday: "long", day: "numeric", month: "long", year: "numeric",
@@ -414,20 +418,6 @@ function Mesero() {
                             )
                         )}
                     />
-                )}
-                {detalleAtencionSeleccionada && (
-                    <div className="space-y-3">
-                        <Alert type="info">
-                            El servidor valida pagos confirmados, saldos y pedidos antes de cerrar la atención. Los pedidos pagados, cerrados o anulados conservan sus restricciones.
-                        </Alert>
-                        <Button
-                            variant="outline"
-                            disabled={!detalleAtencionSeleccionada.pedidos?.length}
-                            onClick={() => setAtencionParaCerrar(detalleAtencionSeleccionada)}
-                        >
-                            Solicitar cierre de atención
-                        </Button>
-                    </div>
                 )}
                 {detalleAtencionSeleccionada && (
                     <Button
@@ -539,25 +529,36 @@ function Mesero() {
                         </div>
                     ) : (
                         <div className="grid gap-4 md:grid-cols-2">
-                            {platosFiltrados.map((plato) => (
-                                <article key={plato.id_producto} className="flex flex-col justify-between rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
+                            {platosFiltrados.map((plato) => {
+                                const key = claveDetalleVenta(plato);
+                                const nombre = plato.tipo_venta === "ALMUERZO_COMPLETO"
+                                    ? `${plato.nombre} · segundo de ${plato.segundo_elegido}`
+                                    : plato.nombre;
+                                return (
+                                <article key={key} className="flex flex-col justify-between rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
                                     <div className="flex items-start justify-between gap-3">
                                         <div>
                                             <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-800">{plato.categoria}</span>
-                                            <h3 className="mt-3 text-lg font-bold text-slate-900">{plato.nombre}</h3>
+                                            <h3 className="mt-3 text-lg font-bold text-slate-900">{nombre}</h3>
+                                            {plato.refresco_acompanamiento && <p className="mt-1 text-xs text-slate-500">Refresco gratuito incluido: {plato.refresco_acompanamiento}</p>}
                                         </div>
                                     </div>
                                     <div className="mt-5 flex items-end justify-between">
                                         <div>
-                                            <p className="font-black text-slate-900">{money(plato.precio)}</p>
-                                            <p className="mt-1 text-xs text-slate-500">{plato.stock} disponibles</p>
+                                            <p className="font-black text-slate-900">{precioConfigurado(plato) ? money(plato.precio) : "Precio sin configurar"}</p>
+                                            <p className="mt-1 text-xs text-slate-500">
+                                                {plato.tipo_venta === "VASO_EXTRA_REFRESCO"
+                                                    ? "Adicional independiente · sin descuento de producción"
+                                                    : `${plato.stock} disponibles`}
+                                            </p>
                                         </div>
-                                        <button onClick={() => agregarPlato(plato)} disabled={Number(plato.stock) <= 0} className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:bg-slate-300">
+                                        <button onClick={() => agregarPlato(plato)} disabled={inventarioAgotado(plato) || !precioConfigurado(plato)} className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:bg-slate-300">
                                             Agregar +
                                         </button>
                                     </div>
                                 </article>
-                            ))}
+                                );
+                            })}
                         </div>
                     )}
 
@@ -660,15 +661,15 @@ function Mesero() {
                             ) : (
                                 <ul className="space-y-3">
                                     {carrito.map((item) => (
-                                        <li key={item.id_producto} className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 p-3">
+                                        <li key={claveDetalleVenta(item)} className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 p-3">
                                             <div className="min-w-0">
-                                                <p className="truncate text-sm font-bold text-slate-800">{item.nombre}</p>
+                                                <p className="truncate text-sm font-bold text-slate-800">{item.nombre}{item.segundo_elegido ? ` · segundo de ${item.segundo_elegido}` : ""}</p>
                                                 <p className="text-xs text-slate-500">{money(item.precio)} c/u</p>
                                             </div>
                                             <div className="flex items-center gap-2">
-                                                <button type="button" onClick={() => cambiarCantidad(item.id_producto, -1)} aria-label={`Quitar una unidad de ${item.nombre}`} className="h-8 w-8 rounded-lg bg-white font-bold text-slate-700 ring-1 ring-slate-200">−</button>
+                                                <button type="button" onClick={() => cambiarCantidad(claveDetalleVenta(item), -1)} aria-label={`Quitar una unidad de ${item.nombre}`} className="h-8 w-8 rounded-lg bg-white font-bold text-slate-700 ring-1 ring-slate-200">−</button>
                                                 <span className="w-5 text-center text-sm font-bold">{item.cantidad}</span>
-                                                <button type="button" onClick={() => cambiarCantidad(item.id_producto, 1)} aria-label={`Agregar una unidad de ${item.nombre}`} className="h-8 w-8 rounded-lg bg-white font-bold text-slate-700 ring-1 ring-slate-200">+</button>
+                                                <button type="button" disabled={inventarioAgotado(item, item.cantidad)} onClick={() => cambiarCantidad(claveDetalleVenta(item), 1)} aria-label={`Agregar una unidad de ${item.nombre}`} className="h-8 w-8 rounded-lg bg-white font-bold text-slate-700 ring-1 ring-slate-200 disabled:opacity-50">+</button>
                                             </div>
                                         </li>
                                     ))}
@@ -683,18 +684,6 @@ function Mesero() {
                         <Button type="submit" variant="warning" loading={guardando} disabled={cargando} className="w-full">Registrar pedido</Button>
                     </form>
                 </aside>
-                <ConfirmModal
-                    open={Boolean(atencionParaCerrar)}
-                    title="Solicitar cierre de atención"
-                    message={atencionParaCerrar
-                        ? `Se solicitará el cierre de la atención de la mesa ${atencionParaCerrar.mesa}. El servidor verificará que no haya saldos o pagos pendientes y que los pedidos cumplan las condiciones de cierre.`
-                        : ""}
-                    confirmText="Solicitar cierre"
-                    variant="success"
-                    onCancel={() => { if (!guardando) setAtencionParaCerrar(null); }}
-                    onConfirm={cerrarAtencion}
-                    loading={guardando}
-                />
             </div>
         </div>
     );

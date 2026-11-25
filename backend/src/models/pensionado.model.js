@@ -1,13 +1,18 @@
 import pool from "../config/db.js";
+import fechaRestaurante from "../utils/fechaRestaurante.js";
+import produccionModel from "./produccion.model.js";
 
 const camposSaldo = {
     SOPA: "saldo_sopas",
     SEGUNDO: "saldo_segundos",
+    SEGUNDO_POLLO: "saldo_segundos_pollo",
+    SEGUNDO_CARNE: "saldo_segundos_carne",
 };
 
 const obtenerDetalle = async (idCliente) => {
     const cliente = await pool.query(
-        `SELECT id_cliente,nombre,tipo_cliente,saldo_sopas,saldo_segundos
+        `SELECT id_cliente,nombre,tipo_cliente,saldo_sopas,saldo_segundos,
+                saldo_segundos_pollo,saldo_segundos_carne
          FROM cliente
          WHERE id_cliente=$1 AND UPPER(estado::text) NOT IN ('INACTIVO','FALSE')`,
         [idCliente],
@@ -38,7 +43,7 @@ const registrarMovimiento = async (idCliente, idUsuario, datos, tipoMovimiento) 
     const observaciones = String(datos.observaciones || "").trim();
 
     if (!campoSaldo) {
-        throw Object.assign(new Error("El producto debe ser SOPA o SEGUNDO"), { status: 400 });
+        throw Object.assign(new Error("El producto debe ser SOPA, SEGUNDO heredado, SEGUNDO_POLLO o SEGUNDO_CARNE"), { status: 400 });
     }
     if (!Number.isSafeInteger(cantidad) || cantidad < 1 || cantidad > 2147483647) {
         throw Object.assign(new Error("La cantidad debe ser un entero positivo"), { status: 400 });
@@ -50,6 +55,32 @@ const registrarMovimiento = async (idCliente, idUsuario, datos, tipoMovimiento) 
     const client = await pool.connect();
     try {
         await client.query("BEGIN");
+        let productoProduccionId = null;
+        if (tipoMovimiento === "CONSUMO" && tipoProducto !== "SEGUNDO") {
+            const fecha = fechaRestaurante();
+            await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`menu:${fecha}`]);
+            const produccion = await client.query(
+                `SELECT id_sopa,id_segundo1,id_segundo2
+                 FROM produccion_diaria
+                 WHERE fecha=$1`,
+                [fecha],
+            );
+            const idsPorTipo = {
+                SOPA: produccion.rows[0]?.id_sopa,
+                SEGUNDO_POLLO: produccion.rows[0]?.id_segundo1,
+                SEGUNDO_CARNE: produccion.rows[0]?.id_segundo2,
+            };
+            productoProduccionId = idsPorTipo[tipoProducto];
+            if (!productoProduccionId) {
+                throw Object.assign(new Error(`No hay producción de ${tipoProducto.toLowerCase()} registrada para hoy`), { status: 409 });
+            }
+            const menu = await produccionModel.listarMenu(fecha, client, true);
+            const productoDisponible = menu.find((item) => Number(item.id_producto) === Number(productoProduccionId)
+                && item.tipo_venta === "PRODUCTO");
+            if (!productoDisponible || Number(productoDisponible.stock) < cantidad) {
+                throw Object.assign(new Error(`Saldo insuficiente de producción para ${tipoProducto.toLowerCase()}`), { status: 409 });
+            }
+        }
         const resultadoCliente = await client.query(
             `SELECT id_cliente,tipo_cliente,${campoSaldo} AS saldo
              FROM cliente

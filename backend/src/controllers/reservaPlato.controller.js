@@ -43,7 +43,12 @@ export const listar = async (req, res) => {
 
 export const recibir = async (req, res) => {
     try {
-        response.ok(res, await reservaPlatoModel.recibir(req.params.id, req.usuario.id, req.body.id_atencion || null));
+        response.ok(res, await reservaPlatoModel.recibir(
+            req.params.id,
+            req.usuario.id,
+            req.body.id_atencion || null,
+            req.get("Idempotency-Key"),
+        ));
     } catch (error) {
         response.error(res, error.message, error.status || 500);
     }

@@ -17,7 +17,7 @@ const abrir=(datos,idUsuario)=>operacionesModel.abrirCaja(datos,idUsuario);
 
 const pagos=()=>operacionesModel.listarPagos();
 
-const cobrar=(idPedido,datos,idUsuario)=>operacionesModel.registrarPago(idPedido,datos,idUsuario);
+const cobrar=(idPedido,datos,idUsuario,solicitudId)=>operacionesModel.registrarPago(idPedido,datos,idUsuario,solicitudId);
 
 const anularPago=(idPago,datos,idUsuario)=>operacionesModel.anularPago(idPago,datos,idUsuario);
 
@@ -29,7 +29,7 @@ const registrarGasto=(datos,idUsuario)=>operacionesModel.registrarGasto(datos,id
 
 const adicionales=()=>operacionesModel.listarAdicionales();
 
-const cobrarAdicional=(idSolicitud,datos,idUsuario)=>operacionesModel.cobrarAdicional(idSolicitud,datos,idUsuario);
+const cobrarAdicional=(idSolicitud,datos,idUsuario,solicitudId)=>operacionesModel.cobrarAdicional(idSolicitud,datos,idUsuario,solicitudId);
 
 export default{
 

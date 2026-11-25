@@ -10,6 +10,7 @@ const esquemaCompleto = {
     sector_mesa: true,
     configuracion_mesas: true,
     plano_mesas: true,
+    sectores_activables: true,
 };
 
 const resultado = (rows = []) => ({ rows, rowCount: rows.length });
@@ -28,11 +29,11 @@ test("el tablero incluye las mesas deshabilitadas y conserva el estado de atenci
     const mesas = await atencionMesaModel.listarMesas();
 
     assert.deepEqual(mesas.map((mesa) => mesa.estado_atencion), ["DISPONIBLE", "OCUPADA"]);
-    assert.match(sentencias[1].sql, /WHERE \$1::boolean OR m\.habilitada=TRUE/);
+    assert.match(sentencias[1].sql, /WHERE \(\$1::boolean OR m\.habilitada=TRUE\)/);
     assert.match(sentencias[1].sql, /SUM\(GREATEST\(p\.total-COALESCE\(pg\.pagado,0\),0\)\)/);
     assert.match(sentencias[1].sql, /estado='CONFIRMADO'/);
     assert.match(sentencias[1].sql, /COUNT\(p\.id_pedido\) FILTER \(WHERE p\.total IS NULL\)/);
-    assert.deepEqual(sentencias[1].parametros, [true]);
+    assert.deepEqual(sentencias[1].parametros, [true, null]);
 });
 
 test("la consulta administrativa incluye mesas deshabilitadas para poder habilitarlas", async (context) => {
@@ -45,7 +46,7 @@ test("la consulta administrativa incluye mesas deshabilitadas para poder habilit
 
     const mesas = await atencionMesaModel.listarMesas(true);
 
-    assert.deepEqual(parametrosConsulta, [true]);
+    assert.deepEqual(parametrosConsulta, [true, null]);
     assert.equal(mesas[0].habilitada, false);
     assert.equal(mesas[0].estado_atencion, null);
     assert.equal(mesas[0].estado_operativo, "DISPONIBLE");
@@ -155,6 +156,7 @@ test("la edición actualiza organización y datos sin reemplazar el registro de 
                     alto_visual: 0.12,
                 }]);
             }
+            if (sql.includes("SELECT id_sector FROM sector_mesa")) return resultado([{ id_sector: 9 }]);
             if (sql.startsWith("UPDATE mesa")) {
                 updateParameters = parameters;
                 return resultado([{
@@ -268,8 +270,8 @@ test("no permite abrir una atención en una mesa deshabilitada", async (context)
         async query(sql) {
             sentencias.push(sql);
             if (sql.includes("to_regclass('public.mesa')")) return resultado([esquemaCompleto]);
-            if (sql.includes("SELECT id_mesa,estado,habilitada FROM mesa")) {
-                return { rows: [{ id_mesa: 3, estado: "ACTIVA", habilitada: false }], rowCount: 1 };
+            if (sql.includes("SELECT m.id_mesa,m.estado,m.habilitada")) {
+                return { rows: [{ id_mesa: 3, id_sector: null, sector_activo: true, estado: "ACTIVA", habilitada: false }], rowCount: 1 };
             }
             return resultado();
         },
@@ -284,6 +286,43 @@ test("no permite abrir una atención en una mesa deshabilitada", async (context)
 
     assert.ok(sentencias.includes("ROLLBACK"));
     assert.equal(sentencias.some((sql) => sql.includes("INSERT INTO atencion_mesa")), false);
+});
+
+test("abre una atención y registra la apertura en el historial", async (context) => {
+    const sentencias = [];
+    const client = {
+        async query(sql) {
+            sentencias.push(String(sql));
+            if (String(sql).includes("to_regclass('public.mesa')")) return resultado([esquemaCompleto]);
+            if (String(sql).includes("SELECT m.id_mesa,m.estado,m.habilitada")) {
+                return resultado([{
+                    id_mesa: 3,
+                    id_sector: null,
+                    sector_activo: true,
+                    estado: "ACTIVA",
+                    habilitada: true,
+                }]);
+            }
+            if (String(sql).includes("SELECT id_atencion FROM atencion_mesa")) return resultado();
+            if (String(sql).includes("INSERT INTO atencion_mesa")) {
+                return resultado([{
+                    id_atencion: 21,
+                    id_mesa: 3,
+                    id_usuario_apertura: 5,
+                    estado: "ABIERTA",
+                }]);
+            }
+            return resultado();
+        },
+        release() {},
+    };
+    context.mock.method(pool, "connect", async () => client);
+
+    const atencion = await atencionMesaModel.abrirAtencion(3, 5);
+
+    assert.equal(atencion.id_atencion, 21);
+    assert.ok(sentencias.some((sql) => sql.includes("INSERT INTO historial_atencion_mesa")));
+    assert.ok(sentencias.includes("COMMIT"));
 });
 
 test("guarda posiciones y geometría normalizadas dentro de una transacción", async (context) => {
@@ -349,4 +388,179 @@ test("rechaza solapamientos del plano sin ejecutar la actualización", async (co
 
     assert.ok(sentencias.includes("ROLLBACK"));
     assert.equal(sentencias.some((sql) => sql.includes("jsonb_to_recordset")), false);
+});
+
+test("una atención vacía se puede cerrar y queda registrada en el historial", async (context) => {
+    const sentencias = [];
+    const client = {
+        async query(sql) {
+            sentencias.push(String(sql));
+            if (String(sql).includes("to_regclass('public.mesa')")) return resultado([esquemaCompleto]);
+            if (String(sql).includes("SELECT id_atencion,estado FROM atencion_mesa")) {
+                return resultado([{ id_atencion: 21, estado: "ABIERTA" }]);
+            }
+            if (String(sql).includes("FROM pedido p")) return resultado([]);
+            if (String(sql).includes("FROM solicitud_adicional sa")) return resultado([]);
+            if (String(sql).includes("UPDATE atencion_mesa")) {
+                return resultado([{ id_atencion: 21, estado: "CERRADA" }]);
+            }
+            return resultado();
+        },
+        release() {},
+    };
+    context.mock.method(pool, "connect", async () => client);
+
+    const cierre = await atencionMesaModel.cerrarAtencion(21, 6);
+
+    assert.equal(cierre.estado, "CERRADA");
+    assert.ok(sentencias.some((sql) => sql.includes("INSERT INTO historial_atencion_mesa")));
+    assert.ok(sentencias.includes("COMMIT"));
+    assert.equal(sentencias.includes("DELETE FROM mesa"), false);
+});
+
+test("rechaza el cierre de una atención con pagos pendientes de confirmación", async (context) => {
+    const sentencias = [];
+    const client = {
+        async query(sql) {
+            sentencias.push(String(sql));
+            if (String(sql).includes("to_regclass('public.mesa')")) return resultado([esquemaCompleto]);
+            if (String(sql).includes("SELECT id_atencion,estado FROM atencion_mesa")) {
+                return resultado([{ id_atencion: 22, estado: "ABIERTA" }]);
+            }
+            if (String(sql).includes("FROM pedido p")) {
+                return resultado([{
+                    id_pedido: 31,
+                    total: 40,
+                    estado: "ENTREGADO",
+                    confirmados: 0,
+                    pagos_pendientes: 40,
+                }]);
+            }
+            return resultado();
+        },
+        release() {},
+    };
+    context.mock.method(pool, "connect", async () => client);
+
+    await assert.rejects(
+        atencionMesaModel.cerrarAtencion(22, 6),
+        (error) => error.status === 409 && /pagos pendientes/.test(error.message),
+    );
+    assert.ok(sentencias.includes("ROLLBACK"));
+    assert.equal(sentencias.some((sql) => sql.includes("UPDATE atencion_mesa")), false);
+});
+
+test("crea sectores con nombre configurable", async (context) => {
+    const consultas = [];
+    context.mock.method(pool, "query", async (sql, parametros) => {
+        consultas.push({ sql: String(sql), parametros });
+        if (String(sql).includes("to_regclass('public.mesa')")) return resultado([esquemaCompleto]);
+        return resultado([{
+            id_sector: 9,
+            nombre: "Terraza",
+            activo: true,
+        }]);
+    });
+
+    const sector = await atencionMesaModel.crearSector({ nombre: "Terraza" });
+
+    assert.equal(sector.nombre, "Terraza");
+    assert.ok(consultas.some(({ sql, parametros }) => (
+        sql.includes("INSERT INTO sector_mesa")
+        && parametros[0] === "Terraza"
+    )));
+});
+
+test("reactiva un sector sin modificar sus mesas", async (context) => {
+    const sentencias = [];
+    context.mock.method(pool, "query", async (sql) => (
+        String(sql).includes("to_regclass('public.mesa')") ? resultado([esquemaCompleto]) : resultado()
+    ));
+    const client = {
+        async query(sql) {
+            sentencias.push(String(sql));
+            if (String(sql).includes("SELECT id_sector FROM sector_mesa")) return resultado([{ id_sector: 9 }]);
+            if (String(sql).startsWith("UPDATE sector_mesa")) {
+                return resultado([{ id_sector: 9, nombre: "Terraza", activo: true }]);
+            }
+            return resultado();
+        },
+        release() {},
+    };
+    context.mock.method(pool, "connect", async () => client);
+
+    const sector = await atencionMesaModel.actualizarSector(9, { nombre: "Terraza", activo: true });
+
+    assert.equal(sector.activo, true);
+    assert.equal(sentencias.some((sql) => sql.includes("FROM mesa m")), false);
+    assert.equal(sentencias.some((sql) => sql.startsWith("DELETE FROM mesa")), false);
+});
+
+test("desactivar un sector con atención abierta conserva el sector y sus mesas", async (context) => {
+    const sentencias = [];
+    const client = {
+        async query(sql) {
+            sentencias.push(String(sql));
+            if (String(sql).includes("to_regclass('public.mesa')")) return resultado([esquemaCompleto]);
+            if (String(sql).includes("SELECT id_sector FROM sector_mesa")) return resultado([{ id_sector: 9 }]);
+            if (String(sql).includes("FROM mesa m")) return resultado([{ id_atencion: 21 }]);
+            return resultado();
+        },
+        release() {},
+    };
+    context.mock.method(pool, "query", async (sql) => (
+        String(sql).includes("to_regclass('public.mesa')") ? resultado([esquemaCompleto]) : resultado()
+    ));
+    context.mock.method(pool, "connect", async () => client);
+
+    await assert.rejects(
+        atencionMesaModel.actualizarSector(9, { nombre: "Terraza", activo: false }),
+        (error) => error.status === 409 && /atenciones abiertas/.test(error.message),
+    );
+    assert.ok(sentencias.includes("ROLLBACK"));
+    assert.equal(sentencias.some((sql) => sql.startsWith("UPDATE sector_mesa")), false);
+    assert.equal(sentencias.some((sql) => sql.includes("DELETE FROM mesa")), false);
+});
+
+test("permite desactivar un sector sin atenciones abiertas y conserva las mesas", async (context) => {
+    const sentencias = [];
+    const client = {
+        async query(sql, parametros) {
+            sentencias.push({ sql: String(sql), parametros });
+            if (String(sql).includes("to_regclass('public.mesa')")) return resultado([esquemaCompleto]);
+            if (String(sql).includes("SELECT id_sector FROM sector_mesa")) return resultado([{ id_sector: 9 }]);
+            if (String(sql).includes("FROM mesa m")) return resultado([]);
+            if (String(sql).startsWith("UPDATE sector_mesa")) {
+                return resultado([{ id_sector: 9, nombre: "Terraza", activo: false }]);
+            }
+            return resultado();
+        },
+        release() {},
+    };
+    context.mock.method(pool, "query", async (sql) => (
+        String(sql).includes("to_regclass('public.mesa')") ? resultado([esquemaCompleto]) : resultado()
+    ));
+    context.mock.method(pool, "connect", async () => client);
+
+    const sector = await atencionMesaModel.actualizarSector(9, { nombre: "Terraza", activo: false });
+
+    assert.equal(sector.activo, false);
+    assert.ok(sentencias.some(({ sql }) => sql === "COMMIT"));
+    assert.equal(sentencias.some(({ sql }) => sql.includes("DELETE FROM mesa")), false);
+});
+
+test("filtra las mesas de caja y mesero por sector sin cambiar el plano guardado", async (context) => {
+    const consultas = [];
+    context.mock.method(pool, "query", async (sql, parametros) => {
+        consultas.push({ sql: String(sql), parametros });
+        if (String(sql).includes("to_regclass('public.mesa')")) return resultado([esquemaCompleto]);
+        return resultado([{ id_mesa: 4, id_sector: 9, sector: "Terraza", estado: "ACTIVA", habilitada: true }]);
+    });
+
+    const mesas = await atencionMesaModel.listarMesas(false, "9");
+
+    assert.equal(mesas[0].id_sector, 9);
+    assert.deepEqual(consultas[1].parametros, [false, 9]);
+    assert.match(consultas[1].sql, /m\.id_sector=NULLIF\(\$2::text,'sin-sector'\)::bigint/);
+    assert.equal(consultas.some(({ sql }) => sql.startsWith("UPDATE mesa")), false);
 });

@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { Button, Input, Textarea } from "./ui";
+import { claveDetalleVenta, inventarioAgotado, precioConfigurado, serializarDetalleVenta } from "../utils/detalleVenta";
 
 const importe = (value) => {
     const amount = Number(value);
@@ -14,7 +15,8 @@ function MesaOrderProductAdder({ pedido, menu = [], loading = false, onCancel, o
     const [observaciones, setObservaciones] = useState("");
 
     const disponibles = useMemo(
-        () => menu.filter((item) => Number(item.stock) > 0
+        () => menu.filter((item) => precioConfigurado(item)
+            && (item.stock === null || item.stock === undefined || Number(item.stock) > 0)
             && String(item.nombre || "").toLocaleLowerCase().includes(busqueda.trim().toLocaleLowerCase())),
         [busqueda, menu]
     );
@@ -22,20 +24,21 @@ function MesaOrderProductAdder({ pedido, menu = [], loading = false, onCancel, o
 
     const agregar = (producto) => {
         setProductos((actuales) => {
-            const existente = actuales.find((item) => Number(item.id_producto) === Number(producto.id_producto));
-            if (existente?.cantidad >= Number(producto.stock)) return actuales;
+            const clave = claveDetalleVenta(producto);
+            const existente = actuales.find((item) => claveDetalleVenta(item) === clave);
+            if (inventarioAgotado(producto, existente?.cantidad || 0)) return actuales;
             return existente
-                ? actuales.map((item) => Number(item.id_producto) === Number(producto.id_producto)
+                ? actuales.map((item) => claveDetalleVenta(item) === clave
                     ? { ...item, cantidad: item.cantidad + 1 }
                     : item)
                 : [...actuales, { ...producto, cantidad: 1 }];
         });
     };
 
-    const cambiarCantidad = (idProducto, delta) => {
+    const cambiarCantidad = (clave, delta) => {
         setProductos((actuales) => actuales
-            .map((item) => Number(item.id_producto) === Number(idProducto)
-                ? { ...item, cantidad: Math.min(Number(item.stock), item.cantidad + delta) }
+            .map((item) => claveDetalleVenta(item) === clave
+                ? { ...item, cantidad: item.stock == null ? item.cantidad + delta : Math.min(Number(item.stock), item.cantidad + delta) }
                 : item)
             .filter((item) => item.cantidad > 0));
     };
@@ -44,7 +47,7 @@ function MesaOrderProductAdder({ pedido, menu = [], loading = false, onCancel, o
         event.preventDefault();
         if (!productos.length) return;
         onSubmit({
-            detalle: productos.map(({ id_producto, cantidad }) => ({ id_producto, cantidad })),
+            detalle: productos.map(serializarDetalleVenta),
             observaciones: observaciones.trim(),
         });
     };
@@ -76,19 +79,29 @@ function MesaOrderProductAdder({ pedido, menu = [], loading = false, onCancel, o
             {disponibles.length ? (
                 <div className="grid max-h-56 grid-cols-1 gap-2 overflow-y-auto sm:grid-cols-2">
                     {disponibles.map((producto) => {
-                        const agregado = productos.find((item) => Number(item.id_producto) === Number(producto.id_producto));
-                        const agotadoEnBorrador = agregado && agregado.cantidad >= Number(producto.stock);
+                        const clave = claveDetalleVenta(producto);
+                        const agregado = productos.find((item) => claveDetalleVenta(item) === clave);
+                        const agotadoEnBorrador = inventarioAgotado(producto, agregado?.cantidad || 0);
+                        const nombre = producto.tipo_venta === "ALMUERZO_COMPLETO"
+                            ? `${producto.nombre} · segundo de ${producto.segundo_elegido}`
+                            : producto.nombre;
                         return (
                             <button
-                                key={producto.id_producto}
+                                key={clave}
                                 type="button"
-                                disabled={Boolean(agotadoEnBorrador) || loading}
+                                disabled={agotadoEnBorrador || loading}
                                 onClick={() => agregar(producto)}
                                 className="flex min-h-11 items-center justify-between gap-3 rounded-lg border border-[#E8DDD1] bg-white px-3 py-2 text-left text-sm hover:border-[#B85C3B]/60 disabled:cursor-not-allowed disabled:opacity-50"
                             >
                                 <span className="min-w-0">
-                                    <span className="block truncate font-semibold text-[#342820]">{producto.nombre}</span>
-                                    <span className="text-xs text-[#75675C]">{importe(producto.precio)} · {producto.stock} disponibles</span>
+                                    <span className="block truncate font-semibold text-[#342820]">{nombre}</span>
+                                    <span className="text-xs text-[#75675C]">
+                                        {importe(producto.precio)}
+                                        {producto.refresco_acompanamiento ? ` · Refresco gratuito: ${producto.refresco_acompanamiento}` : ""}
+                                        {producto.tipo_venta === "VASO_EXTRA_REFRESCO"
+                                            ? " · adicional configurable, sin descuento de producción"
+                                            : ` · ${producto.stock} disponibles`}
+                                    </span>
                                 </span>
                                 <span aria-hidden="true" className="font-bold text-[#B85C3B]">+</span>
                             </button>
@@ -104,21 +117,23 @@ function MesaOrderProductAdder({ pedido, menu = [], loading = false, onCancel, o
                     <h5 className="text-sm font-bold text-[#342820]">Productos que se agregarán</h5>
                     <ul className="space-y-2">
                         {productos.map((item) => (
-                            <li key={item.id_producto} className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-white p-3 text-sm">
+                            <li key={claveDetalleVenta(item)} className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-white p-3 text-sm">
                                 <span className="min-w-0 flex-1">
-                                    <span className="block truncate font-semibold text-[#342820]">{item.nombre}</span>
+                                    <span className="block truncate font-semibold text-[#342820]">
+                                        {item.nombre}{item.segundo_elegido ? ` · segundo de ${item.segundo_elegido}` : ""}
+                                    </span>
                                     <span className="text-xs text-[#75675C]">{importe(item.precio)} c/u</span>
                                 </span>
                                 <div className="flex items-center gap-2">
-                                    <Button type="button" size="sm" variant="secondary" aria-label={`Quitar una unidad de ${item.nombre}`} onClick={() => cambiarCantidad(item.id_producto, -1)}>-</Button>
+                                    <Button type="button" size="sm" variant="secondary" aria-label={`Quitar una unidad de ${item.nombre}`} onClick={() => cambiarCantidad(claveDetalleVenta(item), -1)}>-</Button>
                                     <span className="min-w-6 text-center font-bold">{item.cantidad}</span>
                                     <Button
                                         type="button"
                                         size="sm"
                                         variant="secondary"
                                         aria-label={`Agregar una unidad de ${item.nombre}`}
-                                        disabled={item.cantidad >= Number(item.stock) || loading}
-                                        onClick={() => cambiarCantidad(item.id_producto, 1)}
+                                        disabled={inventarioAgotado(item, item.cantidad) || loading}
+                                        onClick={() => cambiarCantidad(claveDetalleVenta(item), 1)}
                                     >
                                         +
                                     </Button>

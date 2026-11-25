@@ -42,12 +42,15 @@ const listarPorUsuario = async (idUsuario) => {
 		       p.pagado, p.observaciones,
 		       COALESCE(json_agg(json_build_object(
 		           'id_producto', pr.id_producto, 'nombre', pr.nombre,
-		           'cantidad', dp.cantidad, 'precio', dp.precio, 'subtotal', dp.subtotal
+		           'cantidad', dp.cantidad, 'precio', dp.precio, 'subtotal', dp.subtotal,
+		           'tipo_venta', CASE WHEN dp.id_sopa_componente IS NOT NULL THEN 'ALMUERZO_COMPLETO' ELSE 'PRODUCTO' END,
+		           'id_segundo_elegido', segundo.id_producto, 'segundo_elegido', segundo.nombre
 		       )) FILTER (WHERE dp.id_pedido IS NOT NULL), '[]') AS detalle
 		FROM pedido p
 		INNER JOIN cliente c ON c.id_cliente = p.id_cliente
 		LEFT JOIN detalle_pedido dp ON dp.id_pedido = p.id_pedido
 		LEFT JOIN producto pr ON pr.id_producto = dp.id_producto
+		LEFT JOIN producto segundo ON segundo.id_producto=dp.id_segundo_componente
 		WHERE p.id_usuario = $1
 		GROUP BY p.id_pedido, c.nombre
 		ORDER BY p.fecha DESC, p.id_pedido DESC
@@ -64,12 +67,15 @@ const listarActivos = async () => {
 		        p.pagado, p.observaciones,
 		        COALESCE(json_agg(json_build_object(
 		            'id_producto', pr.id_producto, 'nombre', pr.nombre,
-		            'cantidad', dp.cantidad, 'precio', dp.precio, 'subtotal', dp.subtotal
+		            'cantidad', dp.cantidad, 'precio', dp.precio, 'subtotal', dp.subtotal,
+		            'tipo_venta', CASE WHEN dp.id_sopa_componente IS NOT NULL THEN 'ALMUERZO_COMPLETO' ELSE 'PRODUCTO' END,
+		            'id_segundo_elegido', segundo.id_producto, 'segundo_elegido', segundo.nombre
 		        )) FILTER (WHERE dp.id_pedido IS NOT NULL), '[]') AS detalle
 		 FROM pedido p
 		 INNER JOIN cliente c ON c.id_cliente = p.id_cliente
 		 LEFT JOIN detalle_pedido dp ON dp.id_pedido = p.id_pedido
 		 LEFT JOIN producto pr ON pr.id_producto = dp.id_producto
+		 LEFT JOIN producto segundo ON segundo.id_producto=dp.id_segundo_componente
 		 WHERE UPPER(p.estado) NOT IN ('ENTREGADO', 'CANCELADO', 'CANCELADA')
 		 GROUP BY p.id_pedido, c.nombre
 		 ORDER BY p.fecha ASC, p.id_pedido ASC`
@@ -83,12 +89,15 @@ const obtener = async (idPedido) => {
 		        p.fecha, p.estado, p.total, p.pagado, p.observaciones,
 		        COALESCE(json_agg(json_build_object(
 		            'id_producto', pr.id_producto, 'nombre', pr.nombre,
-		            'cantidad', dp.cantidad, 'precio', dp.precio, 'subtotal', dp.subtotal
+		            'cantidad', dp.cantidad, 'precio', dp.precio, 'subtotal', dp.subtotal,
+		            'tipo_venta', CASE WHEN dp.id_sopa_componente IS NOT NULL THEN 'ALMUERZO_COMPLETO' ELSE 'PRODUCTO' END,
+		            'id_segundo_elegido', segundo.id_producto, 'segundo_elegido', segundo.nombre
 		        )) FILTER (WHERE dp.id_pedido IS NOT NULL), '[]') AS detalle
 		 FROM pedido p
 		 INNER JOIN cliente c ON c.id_cliente = p.id_cliente
 		 LEFT JOIN detalle_pedido dp ON dp.id_pedido = p.id_pedido
 		 LEFT JOIN producto pr ON pr.id_producto = dp.id_producto
+		 LEFT JOIN producto segundo ON segundo.id_producto=dp.id_segundo_componente
 		 WHERE p.id_pedido = $1
 		 GROUP BY p.id_pedido, c.nombre, c.tipo_cliente`,
 		[idPedido]
@@ -128,8 +137,10 @@ const registrarImpresion = async (idPedido, idUsuario, idSolicitud = null) => {
 				throw Object.assign(new Error("No existe un adicional cobrado para imprimir"), { status: 404 });
 			}
 			const lineas = await client.query(
-				`SELECT p.id_producto,pr.nombre,p.cantidad,p.precio,p.subtotal
+				`SELECT p.id_producto,pr.nombre,p.cantidad,p.precio,p.subtotal,
+				        segundo.id_producto AS id_segundo_elegido,segundo.nombre AS segundo_elegido
 				 FROM detalle_pedido p INNER JOIN producto pr ON pr.id_producto=p.id_producto
+				 LEFT JOIN producto segundo ON segundo.id_producto=p.id_segundo_componente
 				 WHERE p.id_pedido=$1 AND p.id_solicitud=$2 ORDER BY p.id_detalle_pedido`,
 				[idPedido,idSolicitud],
 			);
@@ -139,8 +150,10 @@ const registrarImpresion = async (idPedido, idUsuario, idSolicitud = null) => {
 			tipo = "ADICIONAL";
 		} else {
 			const lineas = await client.query(
-				`SELECT p.id_producto,pr.nombre,p.cantidad,p.precio,p.subtotal
+				`SELECT p.id_producto,pr.nombre,p.cantidad,p.precio,p.subtotal,
+				        segundo.id_producto AS id_segundo_elegido,segundo.nombre AS segundo_elegido
 				 FROM detalle_pedido p INNER JOIN producto pr ON pr.id_producto=p.id_producto
+				 LEFT JOIN producto segundo ON segundo.id_producto=p.id_segundo_componente
 				 WHERE p.id_pedido=$1 AND p.id_solicitud IS NULL ORDER BY p.id_detalle_pedido`,
 				[idPedido],
 			);

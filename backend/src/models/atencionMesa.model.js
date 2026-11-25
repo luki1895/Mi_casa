@@ -20,7 +20,12 @@ const assertReady = async (db = pool, requireConfiguration = true) => {
                         'posicion_x','posicion_y','rotacion_grados',
                         'forma_visual','ancho_visual','alto_visual'
                       ])
-                ), FALSE) AS plano_mesas`,
+                ), FALSE) AS plano_mesas,
+                EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_schema='public' AND table_name='sector_mesa'
+                      AND column_name='activo'
+                ) AS sectores_activables`,
     );
     const schema = rows[0];
     const faltantes = [
@@ -32,10 +37,11 @@ const assertReady = async (db = pool, requireConfiguration = true) => {
         if (!schema.sector_mesa) faltantes.push("sector_mesa");
         if (!schema.configuracion_mesas) faltantes.push("columnas de configuración de mesas");
         if (!schema.plano_mesas) faltantes.push("columnas de distribución en planta");
+        if (!schema.sectores_activables) faltantes.push("estado activo de sectores");
     }
     if (faltantes.length) {
         const migraciones = requireConfiguration
-            ? "006_mesas_atenciones.sql, 010_configuracion_mesas.sql y 011_distribucion_plano_mesas.sql"
+            ? "006_mesas_atenciones.sql, 010_configuracion_mesas.sql, 011_distribucion_plano_mesas.sql y 013_operacion_comercial_y_sectores.sql"
             : "006_mesas_atenciones.sql";
         throw Object.assign(
             new Error(`El esquema de mesas está incompleto (${faltantes.join(", ")}). Revisa las migraciones ${migraciones}.`),
@@ -197,11 +203,17 @@ const validarColisionesPlano = (mesas) => {
     }
 };
 
-const listarMesas = async (incluirDeshabilitadas = true) => {
+const listarMesas = async (incluirDeshabilitadas = true, sectorId = null) => {
     await assertReady();
+    const filtroSector = sectorId === null || sectorId === undefined || sectorId === ""
+        ? null
+        : sectorId === "sin-sector"
+            ? "sin-sector"
+            : validarId(sectorId, "sector");
     const { rows } = await pool.query(
         `SELECT m.id_mesa,m.numero,m.capacidad,m.estado,m.habilitada,m.id_sector,
-                s.nombre AS sector,m.orden_visualizacion,m.posicion_x,m.posicion_y,
+                s.nombre AS sector,s.activo AS sector_activo,
+                m.orden_visualizacion,m.posicion_x,m.posicion_y,
                 m.rotacion_grados,m.forma_visual,m.ancho_visual,m.alto_visual,
                 m.creada_en,m.actualizada_en,
                 a.id_atencion,a.id_usuario_apertura,a.abierta_en,
@@ -218,20 +230,27 @@ const listarMesas = async (incluirDeshabilitadas = true) => {
          FROM mesa m
          LEFT JOIN sector_mesa s ON s.id_sector=m.id_sector
          LEFT JOIN atencion_mesa a ON a.id_mesa=m.id_mesa AND a.estado='ABIERTA'
-         WHERE $1::boolean OR m.habilitada=TRUE
+         WHERE ($1::boolean OR m.habilitada=TRUE)
+           AND ($2::text IS NULL
+                OR ($2::text='sin-sector' AND m.id_sector IS NULL)
+                OR m.id_sector=NULLIF($2::text,'sin-sector')::bigint)
          ORDER BY lower(COALESCE(s.nombre,'')),m.orden_visualizacion,m.numero,m.id_mesa`,
-        [incluirDeshabilitadas],
+        [incluirDeshabilitadas, filtroSector],
     );
     return rows.map((mesa) => {
         const estadoOperativo = mesa.id_atencion
             ? "OCUPADA"
-            : mesa.estado !== "ACTIVA"
+            : mesa.estado !== "ACTIVA" || mesa.sector_activo === false
                 ? "FUERA_SERVICIO"
                 : "DISPONIBLE";
         return {
             ...mesa,
             estado_operativo: estadoOperativo,
-            estado_atencion: mesa.habilitada ? estadoOperativo : null,
+            estado_atencion: !mesa.habilitada
+                ? null
+                : mesa.sector_activo === false
+                    ? "FUERA_SERVICIO"
+                    : estadoOperativo,
         };
     });
 };
@@ -248,7 +267,10 @@ const crearMesa = async (datos) => {
                 numero,capacidad,id_sector,orden_visualizacion,habilitada,estado,
                 posicion_x,posicion_y,rotacion_grados,forma_visual,ancho_visual,alto_visual
              )
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+             SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12
+             WHERE $3::bigint IS NULL OR EXISTS (
+                 SELECT 1 FROM sector_mesa WHERE id_sector=$3 AND activo IS TRUE
+             )
              RETURNING id_mesa,numero,capacidad,estado,habilitada,id_sector,orden_visualizacion,
                 posicion_x,posicion_y,rotacion_grados,forma_visual,ancho_visual,alto_visual,
                 creada_en,actualizada_en`,
@@ -258,6 +280,7 @@ const crearMesa = async (datos) => {
                 mesa.rotacionGrados, mesa.formaVisual, mesa.anchoVisual, mesa.altoVisual,
             ],
         );
+        if (!rows[0]) throw Object.assign(new Error("El sector seleccionado no existe o está desactivado"), { status: 400 });
         return rows[0];
     } catch (error) {
         if (error.code === "23505") throw Object.assign(new Error("Ya existe una mesa con ese nombre o número"), { status: 409 });
@@ -279,6 +302,13 @@ const actualizarMesa = async (idMesa, datos = {}) => {
         );
         const mesaActual = actuales.rows.find((elemento) => Number(elemento.id_mesa) === idMesa);
         if (!mesaActual) throw Object.assign(new Error("Mesa no encontrada"), { status: 404 });
+        if (mesa.idSector !== null) {
+            const sector = await client.query(
+                "SELECT id_sector FROM sector_mesa WHERE id_sector=$1 AND activo IS TRUE FOR SHARE",
+                [mesa.idSector],
+            );
+            if (!sector.rowCount) throw Object.assign(new Error("El sector seleccionado no existe o está desactivado"), { status: 400 });
+        }
         const geometriaNueva = {
             posicion_x: mesa.posicionX,
             posicion_y: mesa.posicionY,
@@ -334,15 +364,19 @@ const actualizarMesa = async (idMesa, datos = {}) => {
     }
 };
 
-const listarSectores = async () => {
+const listarSectores = async (incluirDeshabilitados = true) => {
     await assertReady();
     const { rows } = await pool.query(
-        `SELECT s.id_sector,s.nombre,s.creado_en,s.actualizado_en,
-                COUNT(m.id_mesa)::int AS cantidad_mesas
+        `SELECT s.id_sector,s.nombre,s.activo,s.creado_en,s.actualizado_en,
+                COUNT(m.id_mesa)::int AS cantidad_mesas,
+                COUNT(a.id_atencion)::int AS atenciones_abiertas
          FROM sector_mesa s
          LEFT JOIN mesa m ON m.id_sector=s.id_sector
+         LEFT JOIN atencion_mesa a ON a.id_mesa=m.id_mesa AND a.estado='ABIERTA'
+         WHERE $1::boolean OR s.activo=TRUE
          GROUP BY s.id_sector
          ORDER BY lower(s.nombre),s.id_sector`,
+        [incluirDeshabilitados],
     );
     return rows;
 };
@@ -354,7 +388,7 @@ const crearSector = async (datos) => {
         const { rows } = await pool.query(
             `INSERT INTO sector_mesa (nombre)
              VALUES ($1)
-             RETURNING id_sector,nombre,creado_en,actualizado_en`,
+             RETURNING id_sector,nombre,activo,creado_en,actualizado_en`,
             [nombre],
         );
         return rows[0];
@@ -364,23 +398,51 @@ const crearSector = async (datos) => {
     }
 };
 
-const actualizarSector = async (idSector, datos) => {
+const actualizarSector = async (idSector, datos = {}) => {
     idSector = validarId(idSector, "sector");
     const nombre = validarNombreSector(datos);
+    const activo = datos.activo === undefined ? null : datos.activo;
+    if (activo !== null && typeof activo !== "boolean") {
+        throw Object.assign(new Error("El estado del sector debe ser verdadero o falso"), { status: 400 });
+    }
     await assertReady();
+    const client = await pool.connect();
     try {
-        const { rows } = await pool.query(
-            `UPDATE sector_mesa
-             SET nombre=$1,actualizado_en=NOW()
-             WHERE id_sector=$2
-             RETURNING id_sector,nombre,creado_en,actualizado_en`,
-            [nombre, idSector],
+        await client.query("BEGIN");
+        const sector = await client.query(
+            "SELECT id_sector FROM sector_mesa WHERE id_sector=$1 FOR UPDATE",
+            [idSector],
         );
-        if (!rows[0]) throw Object.assign(new Error("Sector no encontrado"), { status: 404 });
+        if (!sector.rowCount) throw Object.assign(new Error("Sector no encontrado"), { status: 404 });
+        if (activo === false) {
+            const atenciones = await client.query(
+                `SELECT 1
+                 FROM mesa m
+                 INNER JOIN atencion_mesa a ON a.id_mesa=m.id_mesa AND a.estado='ABIERTA'
+                 WHERE m.id_sector=$1
+                 LIMIT 1
+                 FOR UPDATE OF a`,
+                [idSector],
+            );
+            if (atenciones.rowCount) {
+                throw Object.assign(new Error("No se puede desactivar un sector que tiene atenciones abiertas"), { status: 409 });
+            }
+        }
+        const { rows } = await client.query(
+            `UPDATE sector_mesa
+             SET nombre=$1,activo=COALESCE($2,activo),actualizado_en=NOW()
+             WHERE id_sector=$3
+             RETURNING id_sector,nombre,activo,creado_en,actualizado_en`,
+            [nombre, activo, idSector],
+        );
+        await client.query("COMMIT");
         return rows[0];
     } catch (error) {
+        await client.query("ROLLBACK");
         if (error.code === "23505") throw Object.assign(new Error("Ya existe un sector con ese nombre"), { status: 409 });
         throw error;
+    } finally {
+        client.release();
     }
 };
 
@@ -442,11 +504,24 @@ const abrirAtencion = async (idMesa, idUsuario) => {
         await client.query("BEGIN");
         await assertReady(client);
         const mesaResult = await client.query(
-            "SELECT id_mesa,estado,habilitada FROM mesa WHERE id_mesa=$1 FOR UPDATE",
+            `SELECT m.id_mesa,m.estado,m.habilitada,m.id_sector,
+                    COALESCE(s.activo,TRUE) AS sector_activo
+             FROM mesa m
+             LEFT JOIN sector_mesa s ON s.id_sector=m.id_sector
+             WHERE m.id_mesa=$1
+             FOR UPDATE OF m`,
             [idMesa],
         );
         if (!mesaResult.rowCount) throw Object.assign(new Error("Mesa no encontrada"), { status: 404 });
+        if (mesaResult.rows[0].id_sector !== null && mesaResult.rows[0].id_sector !== undefined) {
+            const sector = await client.query(
+                "SELECT activo FROM sector_mesa WHERE id_sector=$1 FOR SHARE",
+                [mesaResult.rows[0].id_sector],
+            );
+            if (!sector.rows[0]?.activo) throw Object.assign(new Error("El sector de la mesa está desactivado"), { status: 409 });
+        }
         if (!mesaResult.rows[0].habilitada) throw Object.assign(new Error("La mesa está deshabilitada"), { status: 409 });
+        if (!mesaResult.rows[0].sector_activo) throw Object.assign(new Error("El sector de la mesa está desactivado"), { status: 409 });
         if (mesaResult.rows[0].estado !== "ACTIVA") throw Object.assign(new Error("La mesa está fuera de servicio"), { status: 409 });
         const actual = await client.query(
             "SELECT id_atencion FROM atencion_mesa WHERE id_mesa=$1 AND estado='ABIERTA' FOR UPDATE",
@@ -556,10 +631,12 @@ const cerrarAtencion = async (idAtencion, idUsuario) => {
              FOR UPDATE OF p`,
             [idAtencion],
         );
-        if (!pedidos.rowCount) throw Object.assign(new Error("No se puede cerrar una atención sin pedidos"), { status: 409 });
         for (const pedido of pedidos.rows) {
             if (String(pedido.estado).toUpperCase() === "CANCELADO") {
                 throw Object.assign(new Error(`El pedido #${pedido.id_pedido} está cancelado y requiere revisión`), { status: 409 });
+            }
+            if (pedido.total === null) {
+                throw Object.assign(new Error(`El pedido #${pedido.id_pedido} no tiene un total confirmado`), { status: 409 });
             }
             if (Number(pedido.pagos_pendientes) > 0) {
                 throw Object.assign(new Error(`El pedido #${pedido.id_pedido} tiene pagos pendientes de confirmación`), { status: 409 });

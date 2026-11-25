@@ -312,6 +312,29 @@ function ConfiguracionMesas() {
         }
     };
 
+    const cambiarEstadoSector = async (sector) => {
+        setGuardandoSector(true);
+        setError(null);
+        setMensaje("");
+        try {
+            const { data } = await api.put(`/atenciones-mesa/admin/sectores/${sector.id_sector}`, {
+                nombre: sector.nombre,
+                activo: !sector.activo,
+            });
+            if (!data.data?.id_sector) {
+                throw Object.assign(new Error("La API no confirmó el cambio de estado del sector."), { code: "INVALID_RESPONSE" });
+            }
+            setSectores((actuales) => actuales.map((item) => (
+                Number(item.id_sector) === Number(data.data.id_sector) ? { ...item, ...data.data } : item
+            )));
+            setMensaje(data.data.activo ? "Sector activado." : "Sector desactivado; sus mesas e historial se conservaron.");
+        } catch (requestError) {
+            setError(describirError(requestError, "No se pudo cambiar el estado del sector.", true));
+        } finally {
+            setGuardandoSector(false);
+        }
+    };
+
     const guardarDistribucion = async (distribucion) => {
         setGuardandoPlano(true);
         setError(null);
@@ -397,7 +420,7 @@ function ConfiguracionMesas() {
                 </Card>
             </div>
 
-            <Card title="Sectores" description="Crea sectores propios y asígnalos a las mesas. Los sectores no se eliminan para conservar sus relaciones históricas.">
+            <Card title="Sectores" description="Crea sectores propios y asígnalos a las mesas. Se pueden desactivar cuando no tienen atenciones abiertas; mesas e historial se conservan.">
                 <form onSubmit={guardarSector} className="flex flex-col gap-3 sm:flex-row sm:items-end">
                     <Input
                         label={sectorEditando ? "Renombrar sector" : "Nuevo sector"}
@@ -424,12 +447,24 @@ function ConfiguracionMesas() {
                             <li key={sector.id_sector} className="inline-flex items-center gap-2 rounded-full border border-[#E8DDD1] bg-[#FCFAF7] px-3 py-2 text-sm">
                                 <span className="font-semibold text-[#342820]">{sector.nombre}</span>
                                 <span className="text-xs text-[#75675C]">{sector.cantidad_mesas} mesas</span>
+                                <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${sector.activo ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-700"}`}>
+                                    {sector.activo ? "Activo" : "Inactivo"}
+                                </span>
                                 <button
                                     type="button"
                                     className="rounded px-2 py-1 text-xs font-bold text-[#8F422D] hover:bg-[#F4D7AC]"
                                     onClick={() => { setSectorEditando(sector); setNombreSector(sector.nombre); }}
                                 >
                                     Editar
+                                </button>
+                                <button
+                                    type="button"
+                                    disabled={guardandoSector || accionesBloqueadas || (sector.activo && Number(sector.atenciones_abiertas) > 0)}
+                                    className="rounded px-2 py-1 text-xs font-bold text-[#8F422D] hover:bg-[#F4D7AC] disabled:cursor-not-allowed disabled:opacity-50"
+                                    onClick={() => cambiarEstadoSector(sector)}
+                                    title={sector.activo && Number(sector.atenciones_abiertas) > 0 ? "Resuelve las atenciones abiertas antes de desactivar este sector." : undefined}
+                                >
+                                    {sector.activo ? "Desactivar" : "Activar"}
                                 </button>
                             </li>
                         ))}
@@ -490,7 +525,11 @@ function ConfiguracionMesas() {
                             onChange={(event) => setFormulario({ ...formulario, id_sector: event.target.value })}
                         >
                             <option value="">Sin sector</option>
-                            {sectores.map((sector) => <option key={sector.id_sector} value={sector.id_sector}>{sector.nombre}</option>)}
+                            {sectores.map((sector) => (
+                                <option key={sector.id_sector} value={sector.id_sector} disabled={!sector.activo}>
+                                    {sector.nombre}{sector.activo ? "" : " (inactivo)"}
+                                </option>
+                            ))}
                         </Select>
                         <Input
                             label="Capacidad de personas"

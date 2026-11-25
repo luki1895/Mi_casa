@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import api from "../../api/axios";
 import fechaRestaurante from "../../utils/fechaRestaurante";
+import claveDeIdempotencia from "../../utils/idempotency";
+import { claveDetalleVenta, inventarioAgotado, precioConfigurado, serializarDetalleVenta } from "../../utils/detalleVenta";
 
 const moneda = (valor) => `Bs ${Number(valor || 0).toFixed(2)}`;
 
@@ -20,6 +22,7 @@ function Pedidos() {
     const [guardando, setGuardando] = useState(false);
     const [error, setError] = useState("");
     const [aviso, setAviso] = useState("");
+    const idempotenciaRef = useRef(null);
 
     const obtenerDatos = useCallback(async () => {
         const fecha = fechaRestaurante();
@@ -91,30 +94,35 @@ function Pedidos() {
 
     const agregarProducto = (producto) => {
         setAviso("");
+        if (!precioConfigurado(producto)) {
+            setAviso(`El precio de ${producto.nombre} todavía no está configurado por administración.`);
+            return;
+        }
         const stock = Number(producto.stock);
-        if (!Number.isFinite(stock) || stock < 1) {
+        const key = claveDetalleVenta(producto);
+        const existente = carrito.find((item) => claveDetalleVenta(item) === key);
+        if (producto.stock !== null && producto.stock !== undefined && (!Number.isFinite(stock) || stock < 1)) {
             setAviso(`No se pudo confirmar la disponibilidad de ${producto.nombre}.`);
             return;
         }
-        const existente = carrito.find((item) => item.id_producto === producto.id_producto);
-        if ((existente?.cantidad || 0) >= stock) {
+        if (inventarioAgotado(producto, existente?.cantidad || 0)) {
             setAviso(`No hay más unidades disponibles de ${producto.nombre}.`);
             return;
         }
         setCarrito((actual) => {
-            const yaAgregado = actual.some((item) => item.id_producto === producto.id_producto);
+            const yaAgregado = actual.some((item) => claveDetalleVenta(item) === key);
             return yaAgregado
-                ? actual.map((item) => item.id_producto === producto.id_producto
+                ? actual.map((item) => claveDetalleVenta(item) === key
                     ? { ...item, cantidad: item.cantidad + 1 }
                     : item)
                 : [...actual, { ...producto, cantidad: 1 }];
         });
     };
 
-    const cambiarCantidad = (idProducto, cantidad) => {
+    const cambiarCantidad = (key, cantidad) => {
         setCarrito((actual) => actual
-            .map((item) => item.id_producto === idProducto
-                ? { ...item, cantidad: Math.min(Number(item.stock), cantidad) }
+            .map((item) => claveDetalleVenta(item) === key
+                ? { ...item, cantidad: item.stock == null ? cantidad : Math.min(Number(item.stock), cantidad) }
                 : item)
             .filter((item) => item.cantidad > 0));
     };
@@ -148,15 +156,20 @@ function Pedidos() {
 
         setGuardando(true);
         try {
-            const { data } = await api.post("/pedidos", {
+            const pedido = {
                 tipo_cliente: tipoCliente,
                 id_cliente: tipoCliente === "PENSIONADO" ? Number(clienteId) : undefined,
                 cliente_nombre: tipoCliente === "EVENTUAL" ? nombreEventual.trim() : undefined,
                 cliente_telefono: tipoCliente === "EVENTUAL" ? telefonoEventual.trim() : undefined,
                 fecha: fechaRestaurante(),
                 observaciones: observaciones.trim(),
-                detalle: carrito.map(({ id_producto, cantidad }) => ({ id_producto, cantidad })),
+                detalle: carrito.map(serializarDetalleVenta),
+            };
+            const solicitudId = claveDeIdempotencia(idempotenciaRef, pedido);
+            const { data } = await api.post("/pedidos", pedido, {
+                headers: { "Idempotency-Key": solicitudId },
             });
+            idempotenciaRef.current = null;
             limpiar();
             setAviso(`Pedido #${data.data.id_pedido} registrado por ${moneda(data.data.total)}.`);
             await cargar();
@@ -229,14 +242,19 @@ function Pedidos() {
                         ) : menuFiltrado.length ? (
                             <div className="divide-y">
                                 {menuFiltrado.map((producto) => (
-                                    <div key={producto.id_producto} className="flex items-center justify-between gap-4 py-3">
+                                    <div key={claveDetalleVenta(producto)} className="flex items-center justify-between gap-4 py-3">
                                         <div>
                                             <p className="font-semibold">{producto.nombre}</p>
-                                            <p className="text-sm text-slate-500">{producto.categoria} · {producto.stock !== null && producto.stock !== undefined && producto.stock !== "" && Number.isFinite(Number(producto.stock)) ? `${Number(producto.stock)} disponibles` : "Disponibilidad no confirmada"}</p>
+                                            <p className="text-sm text-slate-500">
+                                                {producto.categoria}
+                                                {producto.tipo_venta === "ALMUERZO_COMPLETO" && ` · Segundo: ${producto.segundo_elegido}`}
+                                                {producto.tipo_venta === "ALMUERZO_COMPLETO" && producto.refresco_acompanamiento && ` · Refresco incluido: ${producto.refresco_acompanamiento}`}
+                                                {producto.tipo_venta === "VASO_EXTRA_REFRESCO" ? " · Sin descuento de producción" : producto.stock !== null && producto.stock !== undefined && producto.stock !== "" && Number.isFinite(Number(producto.stock)) ? ` · ${Number(producto.stock)} disponibles` : ""}
+                                            </p>
                                         </div>
                                         <div className="flex items-center gap-3">
-                                            <strong>{moneda(producto.precio)}</strong>
-                                            <button type="button" disabled={!Number.isFinite(Number(producto.stock)) || Number(producto.stock) < 1} onClick={() => agregarProducto(producto)} className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-bold text-white disabled:opacity-40">Agregar</button>
+                                            <strong>{precioConfigurado(producto) ? moneda(producto.precio) : "Precio no configurado"}</strong>
+                                            <button type="button" disabled={!precioConfigurado(producto) || inventarioAgotado(producto)} onClick={() => agregarProducto(producto)} className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-bold text-white disabled:opacity-40">Agregar</button>
                                         </div>
                                     </div>
                                 ))}
@@ -253,15 +271,15 @@ function Pedidos() {
                         {carrito.length ? (
                             <div className="mt-4 divide-y">
                                 {carrito.map((item) => (
-                                    <div key={item.id_producto} className="flex items-center justify-between gap-3 py-3">
+                                    <div key={claveDetalleVenta(item)} className="flex items-center justify-between gap-3 py-3">
                                         <div className="min-w-0">
                                             <p className="truncate font-semibold">{item.nombre}</p>
                                             <p className="text-sm text-slate-500">{moneda(item.precio)} c/u</p>
                                         </div>
                                         <div className="flex items-center gap-2">
-                                            <button type="button" aria-label={`Quitar una unidad de ${item.nombre}`} onClick={() => cambiarCantidad(item.id_producto, item.cantidad - 1)} className="h-8 w-8 rounded border">−</button>
+                                            <button type="button" aria-label={`Quitar una unidad de ${item.nombre}`} onClick={() => cambiarCantidad(claveDetalleVenta(item), item.cantidad - 1)} className="h-8 w-8 rounded border">−</button>
                                             <span className="w-5 text-center">{item.cantidad}</span>
-                                            <button type="button" aria-label={`Agregar una unidad de ${item.nombre}`} disabled={item.cantidad >= Number(item.stock)} onClick={() => cambiarCantidad(item.id_producto, item.cantidad + 1)} className="h-8 w-8 rounded border disabled:opacity-40">+</button>
+                                            <button type="button" aria-label={`Agregar una unidad de ${item.nombre}`} disabled={inventarioAgotado(item, item.cantidad)} onClick={() => cambiarCantidad(claveDetalleVenta(item), item.cantidad + 1)} className="h-8 w-8 rounded border disabled:opacity-40">+</button>
                                         </div>
                                     </div>
                                 ))}

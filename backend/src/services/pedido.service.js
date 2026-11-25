@@ -10,6 +10,8 @@ import clienteModel from "../models/cliente.model.js";
 import operacionesModel from "../models/operaciones.model.js";
 import { normalizarRol } from "../middlewares/autorizarRoles.js";
 import fechaRestaurante from "../utils/fechaRestaurante.js";
+import { guardarResultado, obtenerReintento, validarSolicitudId } from "../utils/idempotencia.js";
+import { agruparDetalleVenta, resolverDetalleVenta } from "../utils/detalleVenta.js";
 
 const listar=()=>pedidoModel.listar();
 
@@ -23,37 +25,45 @@ const actualizarEstado=(idPedido,estado,idUsuario,rol)=>pedidoModel.actualizarEs
 
 const registrarImpresion=(idPedido,idUsuario,idSolicitud)=>pedidoModel.registrarImpresion(idPedido,idUsuario,idSolicitud);
 
-const solicitarAdicional=(idPedido,datos,idMesero)=>operacionesModel.crearAdicional(idPedido,datos,idMesero);
+const solicitarAdicional=(idPedido,datos,idMesero,solicitudId)=>operacionesModel.crearAdicional(idPedido,datos,idMesero,solicitudId);
 
-const agregarDetalle=(idPedido,datos,idUsuario)=>operacionesModel.agregarDetallePedido(idPedido,datos,idUsuario);
+const agregarDetalle=(idPedido,datos,idUsuario,solicitudId)=>operacionesModel.agregarDetallePedido(idPedido,datos,idUsuario,solicitudId);
 
-const crear=async(datos = {}, idUsuario, rol)=>{
+const crear=async(datos = {}, idUsuario, rol, solicitudId)=>{
 	if (!datos || typeof datos !== "object" || Array.isArray(datos)) {
 		throw Object.assign(new Error("Los datos del pedido no son válidos"), { status: 400 });
 	}
+	const clave = validarSolicitudId(solicitudId);
 	const eventual = String(datos.tipo_cliente || "").toUpperCase() === "EVENTUAL";
 	if ((!datos.id_cliente && !(eventual && String(datos.cliente_nombre || "").trim())) || !Array.isArray(datos.detalle) || datos.detalle.length === 0) {
 		throw Object.assign(new Error("El pedido debe incluir un cliente válido y al menos un plato"), { status: 400 });
 	}
 
 	const fecha = datos.fecha || fechaRestaurante();
-	const cantidades = new Map();
-	datos.detalle.forEach((item) => {
-		if (!item || typeof item !== "object" || Array.isArray(item)) {
-			throw Object.assign(new Error("El detalle del pedido contiene datos inválidos"), { status: 400 });
-		}
-		const cantidad = Number(item.cantidad);
-		const idProducto = Number(item.id_producto);
-		if (!Number.isInteger(cantidad) || cantidad < 1 || !Number.isInteger(idProducto) || idProducto < 1) {
-			throw Object.assign(new Error("El detalle del pedido contiene datos inválidos"), { status: 400 });
-		}
-		cantidades.set(idProducto, (cantidades.get(idProducto) || 0) + cantidad);
-	});
-	const detalleSolicitado = Array.from(cantidades, ([id_producto, cantidad]) => ({ id_producto, cantidad }));
+	if (datos.detalle.some((item) => !item || typeof item !== "object" || Array.isArray(item))) {
+		throw Object.assign(new Error("El detalle del pedido contiene datos inválidos"), { status: 400 });
+	}
+	const detalleSolicitado = agruparDetalleVenta(datos.detalle);
+	const idClienteSolicitado = datos.id_cliente ? Number(datos.id_cliente) : null;
+	const payloadIdempotente = {
+		id_cliente: idClienteSolicitado,
+		tipo_cliente: String(datos.tipo_cliente || "").toUpperCase(),
+		cliente_nombre: eventual ? String(datos.cliente_nombre || "").trim() : null,
+		cliente_telefono: eventual ? String(datos.cliente_telefono || "").trim() : null,
+		id_atencion: datos.id_atencion == null ? null : Number(datos.id_atencion),
+		fecha: datos.fecha || null,
+		observaciones: String(datos.observaciones || "").trim(),
+		detalle: detalleSolicitado,
+	};
 
 	const client = await pool.connect();
 	try {
 		await client.query("BEGIN");
+		const reintento = await obtenerReintento(client, idUsuario, clave, "CREAR_PEDIDO", payloadIdempotente);
+		if (reintento.resultado) {
+			await client.query("COMMIT");
+			return reintento.resultado;
+		}
 		if (normalizarRol(rol) === "caja") {
 			await operacionesModel.verificarCajaAbierta(client);
 		}
@@ -71,7 +81,7 @@ const crear=async(datos = {}, idUsuario, rol)=>{
 				throw Object.assign(new Error("La atención seleccionada no existe o ya está cerrada"), { status: 409 });
 			}
 		}
-		let idCliente = datos.id_cliente;
+		let idCliente = idClienteSolicitado;
 		if (!idCliente && eventual) {
 			const nuevoCliente = await clienteModel.crear({
 				nombre: String(datos.cliente_nombre).trim(),
@@ -91,16 +101,8 @@ const crear=async(datos = {}, idUsuario, rol)=>{
 		}
 
 		const menu = await produccionModel.listarMenu(fecha, client, true);
-		const detalle = detalleSolicitado.map((item) => {
-			const plato = menu.find((producto) => Number(producto.id_producto) === item.id_producto);
-			if (!plato || Number(plato.stock) < item.cantidad) {
-				const error = new Error(`Disponibilidad insuficiente para el producto ${item.id_producto}`);
-				error.status = 409;
-				throw error;
-			}
-			return { ...item, precio: Number(plato.precio), subtotal: Number(plato.precio) * item.cantidad };
-		});
-		const total = detalle.reduce((suma, item) => suma + item.subtotal, 0);
+		const detalle = resolverDetalleVenta(detalleSolicitado, menu);
+		const total = Math.round(detalle.reduce((suma, item) => suma + item.subtotal, 0) * 100) / 100;
 		const tipoCliente = String(clienteResult.rows[0].tipo_cliente || "EVENTUAL").toUpperCase();
 		const idPedido = await pedidoModel.crear({
 			...datos,
@@ -117,8 +119,10 @@ const crear=async(datos = {}, idUsuario, rol)=>{
 			"INSERT INTO bitacora_operaciones (id_usuario, accion, entidad, id_entidad, detalle) VALUES ($1, $2, $3, $4, $5)",
 			[idUsuario, "CREAR", "pedido", idPedido, JSON.stringify({ id_cliente: idCliente, total, detalle })]
 		);
+		const resultado = { id_pedido: idPedido, total, mensaje: "Pedido registrado" };
+		await guardarResultado(client, idUsuario, reintento, "CREAR_PEDIDO", resultado);
 		await client.query("COMMIT");
-		return { id_pedido: idPedido, total, mensaje: "Pedido registrado" };
+		return resultado;
 	} catch (error) {
 		await client.query("ROLLBACK");
 		throw error;

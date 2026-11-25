@@ -52,3 +52,26 @@ test("Caja puede abrir atenciones y Mesero no puede hacerlo", () => {
         { status: 403, continuado: false },
     );
 });
+
+test("Caja y Mesero pueden consultar el mismo plano y los sectores activos", () => {
+    for (const [method, path] of [["get", "/mesas"], ["get", "/sectores"]]) {
+        for (const role of ["admin", "caja", "mesero"]) {
+            assert.deepEqual(autorizar(method, path, role), { status: undefined, continuado: true });
+        }
+    }
+});
+
+test("solo Administración y Caja pueden finalizar una atención", () => {
+    assert.deepEqual(
+        autorizar("post", "/:id/cerrar", "caja"),
+        { status: undefined, continuado: true },
+    );
+    assert.deepEqual(
+        autorizar("post", "/:id/cerrar", "admin"),
+        { status: undefined, continuado: true },
+    );
+    assert.deepEqual(
+        autorizar("post", "/:id/cerrar", "mesero"),
+        { status: 403, continuado: false },
+    );
+});

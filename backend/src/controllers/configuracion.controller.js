@@ -12,7 +12,7 @@ export const obtener = async (req, res) => {
 
     } catch (error) {
 
-        response.error(res, error.message);
+        response.error(res, error.message, error.status || 500);
 
     }
 
@@ -22,13 +22,10 @@ export const actualizar = async (req, res) => {
 
     try {
 
-        const datos = await configuracionService.actualizar(req.body);
-
+        const datos = await configuracionService.actualizar(req.body, req.usuario.id);
         response.ok(res, datos, "Configuración actualizada");
-
     } catch (error) {
-
-        response.error(res, error.message);
+        response.error(res, error.message, error.status || 500);
 
     }
 

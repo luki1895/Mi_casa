@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import pool from "../config/db.js";
 import produccionModel from "./produccion.model.js";
 import fechaRestaurante from "../utils/fechaRestaurante.js";
+import { guardarResultado, obtenerReintento, validarSolicitudId } from "../utils/idempotencia.js";
 
 const estados = new Set(["PENDIENTE", "RECIBIDA", "EN_PREPARACION", "ATENDIDA", "CANCELADA", "NO_PRESENTADA"]);
 const tokenHash = (token) => crypto.createHash("sha256").update(String(token)).digest("hex");
@@ -424,12 +425,19 @@ const listarInterno = async ({ fecha, estado, buscar } = {}) => {
     return rows;
 };
 
-const recibir = async (idReserva, idUsuario, idAtencion = null) => {
+const recibir = async (idReserva, idUsuario, idAtencion = null, solicitudId) => {
     idReserva = validarId(idReserva, "reserva");
     if (idAtencion !== null) idAtencion = validarId(idAtencion, "atención");
+    const clave = validarSolicitudId(solicitudId);
+    const payload = { id_reserva: idReserva, id_atencion: idAtencion };
     const client = await pool.connect();
     try {
         await client.query("BEGIN");
+        const reintento = await obtenerReintento(client, idUsuario, clave, "RECIBIR_RESERVA_COMO_PEDIDO", payload);
+        if (reintento.resultado) {
+            await client.query("COMMIT");
+            return reintento.resultado;
+        }
         await assertReady(client);
         const reservaResult = await client.query(
             "SELECT * FROM reserva_plato WHERE id_reserva=$1 FOR UPDATE",
@@ -510,8 +518,10 @@ const recibir = async (idReserva, idUsuario, idAtencion = null) => {
              VALUES ($1,'RECIBIR','reserva_plato',$2,$3::jsonb)`,
             [idUsuario, String(idReserva), JSON.stringify({ id_pedido: pedido.rows[0].id_pedido, total })],
         );
+        const resultado = { id_reserva: Number(idReserva), id_pedido: pedido.rows[0].id_pedido, total, estado: "RECIBIDA" };
+        await guardarResultado(client, idUsuario, reintento, "RECIBIR_RESERVA_COMO_PEDIDO", resultado);
         await client.query("COMMIT");
-        return { id_reserva: Number(idReserva), id_pedido: pedido.rows[0].id_pedido, total, estado: "RECIBIDA" };
+        return resultado;
     } catch (error) {
         await client.query("ROLLBACK");
         if (error.code === "42P01" || error.code === "42703") {

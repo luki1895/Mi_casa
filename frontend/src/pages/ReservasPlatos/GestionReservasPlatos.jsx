@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import api from "../../api/axios";
+import claveDeIdempotencia from "../../utils/idempotency";
 
 const fechaLaPaz = () => {
     const parts = new Intl.DateTimeFormat("en-CA", {
@@ -27,6 +28,7 @@ function GestionReservasPlatos() {
     const [error, setError] = useState("");
     const [aviso, setAviso] = useState("");
     const [guardando, setGuardando] = useState(false);
+    const idempotenciaRecibirRef = useRef(null);
     const seleccionada = reservas.find((item) => String(item.id_reserva) === String(seleccionId)) || null;
 
     const cargar = useCallback(async () => {
@@ -54,9 +56,18 @@ function GestionReservasPlatos() {
         if (!seleccionada || !window.confirm("¿Confirmar la llegada y crear un pedido con estos platos?")) return;
         setGuardando(true); setError(""); setAviso("");
         try {
-            const { data } = await api.post(`/reservas-platos/${seleccionada.id_reserva}/recibir`, {
-                id_atencion: atencionId ? Number(atencionId) : null,
+            const payload = { id_atencion: atencionId ? Number(atencionId) : null };
+            const solicitudId = claveDeIdempotencia(idempotenciaRecibirRef, {
+                operacion: "RECIBIR_RESERVA_COMO_PEDIDO",
+                id_reserva: seleccionada.id_reserva,
+                ...payload,
             });
+            const { data } = await api.post(`/reservas-platos/${seleccionada.id_reserva}/recibir`, {
+                ...payload,
+            }, {
+                headers: { "Idempotency-Key": solicitudId },
+            });
+            idempotenciaRecibirRef.current = null;
             setAviso(`Reserva recibida. Pedido #${data.data.id_pedido} creado en el flujo normal de Caja y cocina.`);
             await cargar();
         } catch (requestError) {

@@ -91,7 +91,7 @@ function Pensiones() {
       <header>
         <p className="text-xs font-bold uppercase tracking-[0.25em] text-amber-700">Atención operativa</p>
         <h1 className="mt-1 text-3xl font-black text-slate-900">Saldos pensionados</h1>
-        <p className="mt-1 text-sm text-slate-500">Sopas y segundos mantienen saldos y movimientos independientes.</p>
+        <p className="mt-1 text-sm text-slate-500">Sopa, saldo histórico genérico y segundos de pollo/carne conservan movimientos independientes.</p>
       </header>
       {(error || aviso) && <p role={error ? "alert" : "status"} className={`rounded-xl p-4 text-sm ${error ? "bg-rose-50 text-rose-800" : "bg-emerald-50 text-emerald-800"}`}>{error || aviso}</p>}
       <section className="rounded-2xl bg-white p-5 shadow-sm">
@@ -103,13 +103,15 @@ function Pensiones() {
         </label>
       </section>
       {cargando ? <p className="rounded-xl bg-white p-5">Cargando pensionados…</p> : detalle && String(detalle.id_cliente) === clienteId && <>
-        <section className="grid gap-4 sm:grid-cols-2">
+        <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <article className="rounded-2xl bg-white p-5 shadow-sm"><p className="text-sm text-slate-500">Sopas disponibles</p><p className="mt-2 text-3xl font-black">{detalle.saldo_sopas ?? "Sin asignar"}</p></article>
-          <article className="rounded-2xl bg-white p-5 shadow-sm"><p className="text-sm text-slate-500">Segundos disponibles</p><p className="mt-2 text-3xl font-black">{detalle.saldo_segundos ?? "Sin asignar"}</p></article>
+          <article className="rounded-2xl bg-white p-5 shadow-sm"><p className="text-sm text-slate-500">Segundo histórico (sin especificar)</p><p className="mt-2 text-3xl font-black">{detalle.saldo_segundos ?? "Sin asignar"}</p></article>
+          <article className="rounded-2xl bg-white p-5 shadow-sm"><p className="text-sm text-slate-500">Segundo de pollo</p><p className="mt-2 text-3xl font-black">{detalle.saldo_segundos_pollo ?? "Sin asignar"}</p></article>
+          <article className="rounded-2xl bg-white p-5 shadow-sm"><p className="text-sm text-slate-500">Segundo de carne</p><p className="mt-2 text-3xl font-black">{detalle.saldo_segundos_carne ?? "Sin asignar"}</p></article>
         </section>
         <form onSubmit={registrar} className="grid gap-4 rounded-2xl bg-white p-5 shadow-sm md:grid-cols-4">
           <label className="text-sm font-semibold">Movimiento<select value={movimiento.tipo_movimiento} onChange={(event) => setMovimiento({ ...movimiento, tipo_movimiento: event.target.value })} className="mt-1 w-full rounded-lg border p-3"><option value="CONSUMO">Registrar consumo</option>{["admin", "caja"].includes(rol) && <option value="REPOSICION">Reponer saldo</option>}</select></label>
-          <label className="text-sm font-semibold">Producto<select value={movimiento.tipo_producto} onChange={(event) => setMovimiento({ ...movimiento, tipo_producto: event.target.value })} className="mt-1 w-full rounded-lg border p-3"><option value="SOPA">Sopa</option><option value="SEGUNDO">Segundo</option></select></label>
+          <label className="text-sm font-semibold">Producto<select value={movimiento.tipo_producto} onChange={(event) => setMovimiento({ ...movimiento, tipo_producto: event.target.value })} className="mt-1 w-full rounded-lg border p-3"><option value="SOPA">Sopa</option><option value="SEGUNDO_POLLO">Segundo de pollo</option><option value="SEGUNDO_CARNE">Segundo de carne</option><option value="SEGUNDO">Segundo histórico sin especificar</option></select></label>
           <label className="text-sm font-semibold">Cantidad<input required type="number" min="1" step="1" value={movimiento.cantidad} onChange={(event) => setMovimiento({ ...movimiento, cantidad: event.target.value })} className="mt-1 w-full rounded-lg border p-3" /></label>
           <label className="text-sm font-semibold">Observaciones<input maxLength="500" value={movimiento.observaciones} onChange={(event) => setMovimiento({ ...movimiento, observaciones: event.target.value })} className="mt-1 w-full rounded-lg border p-3" /></label>
           <div className="md:col-span-4 flex justify-end"><button disabled={guardando || !clienteId} className="rounded-lg bg-slate-900 px-5 py-3 font-bold text-white disabled:opacity-50">{guardando ? "Registrando…" : "Registrar movimiento"}</button></div>

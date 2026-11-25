@@ -50,7 +50,7 @@ catch(error) { responderErrorControlador(res,error,"Caja"); }
 };
 
 export const cobrar=async(req,res)=>{
-try { response.ok(res,await cajaService.cobrar(req.params.id,req.body,req.usuario.id)); }
+try { response.ok(res,await cajaService.cobrar(req.params.id,req.body,req.usuario.id,req.get("Idempotency-Key"))); }
 catch(error) { responderErrorControlador(res,error,"Caja"); }
 };
 
@@ -80,6 +80,6 @@ catch(error) { responderErrorControlador(res,error,"Caja"); }
 };
 
 export const cobrarAdicional=async(req,res)=>{
-try { response.ok(res,await cajaService.cobrarAdicional(req.params.id,req.body,req.usuario.id)); }
+try { response.ok(res,await cajaService.cobrarAdicional(req.params.id,req.body,req.usuario.id,req.get("Idempotency-Key"))); }
 catch(error) { responderErrorControlador(res,error,"Caja"); }
 };

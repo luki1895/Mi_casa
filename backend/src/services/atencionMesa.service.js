@@ -1,11 +1,12 @@
 import atencionMesaModel from "../models/atencionMesa.model.js";
 
 export default {
-    listarMesas: () => atencionMesaModel.listarMesas(),
+    listarMesas: (sectorId) => atencionMesaModel.listarMesas(false, sectorId),
     listarMesasConfiguracion: () => atencionMesaModel.listarMesas(true),
     crearMesa: (datos) => atencionMesaModel.crearMesa(datos),
     actualizarMesa: (id, datos) => atencionMesaModel.actualizarMesa(id, datos),
-    listarSectores: () => atencionMesaModel.listarSectores(),
+    listarSectores: () => atencionMesaModel.listarSectores(false),
+    listarSectoresConfiguracion: () => atencionMesaModel.listarSectores(true),
     crearSector: (datos) => atencionMesaModel.crearSector(datos),
     actualizarSector: (id, datos) => atencionMesaModel.actualizarSector(id, datos),
     guardarDistribucion: (datos) => atencionMesaModel.guardarDistribucion(datos),

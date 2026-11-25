@@ -49,7 +49,12 @@ export const crear=async(req,res)=>{
 
 try {
 
-const datos=await pedidoService.crear(req.body, req.usuario.id, req.usuario.rol);
+const datos=await pedidoService.crear(
+    req.body,
+    req.usuario.id,
+    req.usuario.rol,
+    req.get("Idempotency-Key"),
+);
 
 response.ok(res,datos);
 
@@ -63,7 +68,12 @@ responderErrorControlador(res, error, "Pedidos");
 
 export const solicitarAdicional = async (req, res) => {
 	try {
-		const datos = await pedidoService.solicitarAdicional(req.params.id, req.body, req.usuario.id);
+		const datos = await pedidoService.solicitarAdicional(
+			req.params.id,
+			req.body,
+			req.usuario.id,
+			req.get("Idempotency-Key"),
+		);
 		response.ok(res, datos, "Solicitud enviada a Caja para su cobro");
 	} catch (error) {
 		responderErrorControlador(res, error, "Pedidos");
@@ -72,7 +82,12 @@ export const solicitarAdicional = async (req, res) => {
 
 export const agregarDetalle = async (req, res) => {
 	try {
-		const datos = await pedidoService.agregarDetalle(req.params.id, req.body, req.usuario.id);
+		const datos = await pedidoService.agregarDetalle(
+			req.params.id,
+			req.body,
+			req.usuario.id,
+			req.get("Idempotency-Key"),
+		);
 		response.ok(res, datos, "Productos agregados al pedido");
 	} catch (error) {
 		responderErrorControlador(res, error, "Pedidos");

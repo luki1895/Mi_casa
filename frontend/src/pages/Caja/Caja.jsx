@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import api from "../../api/axios";
 import useAuth from "../../hooks/useAuth";
 import { Alert, Badge, Button, Card, ConfirmModal, Input, Modal, Select, Textarea } from "../../components/ui";
@@ -7,6 +7,8 @@ import MesaAtencionDetail from "../../components/MesaAtencionDetail";
 import MesaOrderProductAdder from "../../components/MesaOrderProductAdder";
 import useMesaBoardData from "../../hooks/useMesaBoardData";
 import fechaRestaurante from "../../utils/fechaRestaurante";
+import claveDeIdempotencia from "../../utils/idempotency";
+import { claveDetalleVenta, inventarioAgotado, precioConfigurado, serializarDetalleVenta } from "../../utils/detalleVenta";
 
 const importe = (valor) => `Bs ${Number(valor || 0).toFixed(2)}`;
 const estadoBonito = (valor) => String(valor || "PENDIENTE").replaceAll("_", " ");
@@ -50,6 +52,7 @@ function Caja() {
     const [pedidoParaCancelar, setPedidoParaCancelar] = useState(null);
     const [motivoAnulacion, setMotivoAnulacion] = useState("");
     const [confirmarCierre, setConfirmarCierre] = useState(false);
+    const [atencionParaCerrar, setAtencionParaCerrar] = useState(null);
     const [montoPago, setMontoPago] = useState("");
     const [recibido, setRecibido] = useState("");
     const [metodo, setMetodo] = useState("EFECTIVO");
@@ -58,6 +61,10 @@ function Caja() {
     const [montoInicial, setMontoInicial] = useState("");
     const [observacionesCierre, setObservacionesCierre] = useState("");
     const [guardando, setGuardando] = useState(false);
+    const idempotenciaPedidoRef = useRef(null);
+    const idempotenciaPagoRef = useRef(null);
+    const idempotenciaDetalleRef = useRef(null);
+    const idempotenciaAdicionalRef = useRef(null);
     const {
         mesas,
         atenciones,
@@ -200,14 +207,23 @@ function Caja() {
         ? pagos.filter((pago) => Number(pago.id_pedido) === Number(pedidoCobro.id_pedido))
         : [];
     const pedidosFiltrados = pedidos.filter((pedido) => `${pedido.id_pedido} ${pedido.cliente}`.toLowerCase().includes(busquedaPedidos.trim().toLowerCase()));
-    const agregar = (producto) => setCarrito((actual) => {
-        const existente = actual.find((item) => item.id_producto === producto.id_producto);
-        if ((existente?.cantidad || 0) >= Number(producto.stock)) return actual;
-        return existente
-            ? actual.map((item) => item.id_producto === producto.id_producto ? { ...item, cantidad: item.cantidad + 1 } : item)
-            : [...actual, { ...producto, cantidad: 1 }];
-    });
-    const cambiarCantidad = (id, delta) => setCarrito((actual) => actual.map((item) => item.id_producto === id ? { ...item, cantidad: Math.min(Number(item.stock), item.cantidad + delta) } : item).filter((item) => item.cantidad > 0));
+    const agregar = (producto) => {
+        if (!precioConfigurado(producto)) {
+            setAviso(`El precio de ${producto.nombre} todavía no está configurado por administración.`);
+            return;
+        }
+        const key = claveDetalleVenta(producto);
+        const existente = carrito.find((item) => claveDetalleVenta(item) === key);
+        if (inventarioAgotado(producto, existente?.cantidad || 0)) return;
+        setCarrito((actual) => actual.some((item) => claveDetalleVenta(item) === key)
+            ? actual.map((item) => claveDetalleVenta(item) === key ? { ...item, cantidad: item.cantidad + 1 } : item)
+            : [...actual, { ...producto, cantidad: 1 }]);
+    };
+    const cambiarCantidad = (key, delta) => setCarrito((actual) => actual
+        .map((item) => claveDetalleVenta(item) === key
+            ? { ...item, cantidad: item.stock == null ? item.cantidad + delta : Math.min(Number(item.stock), item.cantidad + delta) }
+            : item)
+        .filter((item) => item.cantidad > 0));
 
     const abrirCobroPedido = (pedido) => {
         const saldoPendiente = String(pedido.saldo_pendiente);
@@ -237,7 +253,7 @@ function Caja() {
         }
         setGuardando(true);
         try {
-            const respuesta = await api.post("/pedidos", {
+            const pedido = {
                 tipo_cliente: tipoCliente,
                 fecha: fechaRestaurante(),
                 id_cliente: tipoCliente === "PENSIONADO" ? Number(clienteId) : undefined,
@@ -245,8 +261,13 @@ function Caja() {
                 cliente_telefono: tipoCliente === "EVENTUAL" ? telefonoEventual.trim() : undefined,
                 id_atencion: atencionId ? Number(atencionId) : undefined,
                 observaciones: observaciones.trim(),
-                detalle: carrito.map(({ id_producto, cantidad }) => ({ id_producto, cantidad })),
+                detalle: carrito.map(serializarDetalleVenta),
+            };
+            const solicitudId = claveDeIdempotencia(idempotenciaPedidoRef, pedido);
+            const respuesta = await api.post("/pedidos", pedido, {
+                headers: { "Idempotency-Key": solicitudId },
             });
+            idempotenciaPedidoRef.current = null;
             setCarrito([]); setClienteId(""); setNombreEventual(""); setTelefonoEventual(""); setObservaciones(""); setAtencionId("");
             if (seccionActiva === "MESAS") setMostrarPedidoMesa(false);
             setAviso(`Pedido #${respuesta.data.data.id_pedido} registrado. Confirma el pago para emitir su comanda.`);
@@ -276,7 +297,16 @@ function Caja() {
         setGuardando(true); setAviso("");
         try {
             if (solicitudCobro) {
-                const adicionalPagado = await api.post(`/caja/adicionales/${solicitudCobro.id_solicitud}/cobrar`, { recibido: efectivoRecibido, metodo });
+                const payload = { recibido: efectivoRecibido, metodo };
+                const solicitudId = claveDeIdempotencia(idempotenciaAdicionalRef, {
+                    operacion: "COBRAR_ADICIONAL",
+                    id_solicitud: solicitudCobro.id_solicitud,
+                    ...payload,
+                });
+                const adicionalPagado = await api.post(`/caja/adicionales/${solicitudCobro.id_solicitud}/cobrar`, payload, {
+                    headers: { "Idempotency-Key": solicitudId },
+                });
+                idempotenciaAdicionalRef.current = null;
                 setUltimaComandaAdicional({
                     id_pedido: adicionalPagado.data.data.id_pedido,
                     id_solicitud: solicitudCobro.id_solicitud,
@@ -289,11 +319,20 @@ function Caja() {
                 setAviso(`Adicional cobrado para el pedido #${solicitudCobro.id_pedido}. Imprime la nueva comanda.`);
                 setSolicitudCobro(null);
             } else {
-                await api.post(`/caja/pedidos/${pedidoCobro.id_pedido}/pagos`, {
+                const payload = {
                     monto,
                     recibido: efectivoRecibido,
                     metodo,
+                };
+                const solicitudId = claveDeIdempotencia(idempotenciaPagoRef, {
+                    operacion: "REGISTRAR_PAGO",
+                    id_pedido: pedidoCobro.id_pedido,
+                    ...payload,
                 });
+                await api.post(`/caja/pedidos/${pedidoCobro.id_pedido}/pagos`, payload, {
+                    headers: { "Idempotency-Key": solicitudId },
+                });
+                idempotenciaPagoRef.current = null;
                 setAviso(`Pago registrado para el pedido #${pedidoCobro.id_pedido}.`);
                 setPedidoCobro(null);
             }
@@ -345,6 +384,26 @@ function Caja() {
         } finally { setGuardando(false); }
     };
 
+    const cerrarAtencion = async () => {
+        if (!atencionParaCerrar) return;
+        setGuardando(true);
+        setAviso("");
+        try {
+            await api.post(`/atenciones-mesa/${atencionParaCerrar.id_atencion}/cerrar`);
+            setAviso(`Atención de la mesa ${atencionParaCerrar.mesa} cerrada. La caja continúa abierta.`);
+            setAtencionParaCerrar(null);
+            setMesaSeleccionadaId(null);
+            setAtencionId("");
+            clearAtencion();
+            await refrescarMesas(true);
+        } catch (requestError) {
+            setAviso(requestError.response?.data?.mensaje || "No se pudo cerrar la atención. Verifica pedidos, pagos y solicitudes pendientes.");
+            await refrescarMesas(true);
+        } finally {
+            setGuardando(false);
+        }
+    };
+
     const actualizarEstadoPedido = async (pedido, estado) => {
         setGuardando(true);
         try {
@@ -369,7 +428,15 @@ function Caja() {
         setGuardando(true);
         setAviso("");
         try {
-            await api.post(`/pedidos/${pedidoParaAgregar.id_pedido}/detalle`, cambios);
+            const solicitudId = claveDeIdempotencia(idempotenciaDetalleRef, {
+                operacion: "AGREGAR_DETALLE_PEDIDO",
+                id_pedido: pedidoParaAgregar.id_pedido,
+                ...cambios,
+            });
+            await api.post(`/pedidos/${pedidoParaAgregar.id_pedido}/detalle`, cambios, {
+                headers: { "Idempotency-Key": solicitudId },
+            });
+            idempotenciaDetalleRef.current = null;
             setPedidoParaAgregar(null);
             setAviso(`Productos agregados al pedido #${pedidoParaAgregar.id_pedido}.`);
             await Promise.all([cargar(), refrescarMesas(true)]);
@@ -522,12 +589,17 @@ function Caja() {
                     <p className="mb-2 text-sm font-bold text-[#342820]">Menú disponible hoy</p>
                     <div className="max-h-64 space-y-2 overflow-y-auto">
                         {!menuConfirmado ? <p className="rounded-lg bg-[#FCFAF7] p-4 text-sm text-[#75675C]">No se pudo confirmar la disponibilidad del menú.</p> : menu.length ? menu.map((plato) => (
-                            <div key={`${plato.id_producto}-${plato.categoria}`} className="flex items-center justify-between gap-3 rounded-xl bg-[#FCFAF7] p-3">
+                            <div key={claveDetalleVenta(plato)} className="flex items-center justify-between gap-3 rounded-xl bg-[#FCFAF7] p-3">
                                 <div className="min-w-0">
                                     <p className="truncate font-semibold">{plato.nombre} <span className="text-xs font-normal text-slate-500">· {plato.categoria}</span></p>
-                                    <p className="text-xs text-slate-500">{importe(plato.precio)} · {plato.stock !== null && plato.stock !== undefined && plato.stock !== "" && Number.isFinite(Number(plato.stock)) ? `${Number(plato.stock)} disponibles` : "Disponibilidad no confirmada"}</p>
+                                    <p className="text-xs text-slate-500">
+                                        {plato.tipo_venta === "ALMUERZO_COMPLETO" ? `Segundo: ${plato.segundo_elegido}${plato.refresco_acompanamiento ? ` · Refresco incluido: ${plato.refresco_acompanamiento}` : ""} · ` : ""}
+                                        {plato.tipo_venta === "VASO_EXTRA_REFRESCO" ? "Adicional sin descuento de producción · " : ""}
+                                        {precioConfigurado(plato) ? importe(plato.precio) : "Precio no configurado"}
+                                        {plato.stock !== null && plato.stock !== undefined ? ` · ${plato.stock} disponibles` : ""}
+                                    </p>
                                 </div>
-                                <Button type="button" size="sm" disabled={!Number(plato.stock) || guardando} onClick={() => agregar(plato)}>Agregar</Button>
+                                <Button type="button" size="sm" disabled={!precioConfigurado(plato) || inventarioAgotado(plato) || guardando} onClick={() => agregar(plato)}>Agregar</Button>
                             </div>
                         )) : <p className="rounded-lg bg-[#FCFAF7] p-4 text-sm text-[#75675C]">Sin platos publicados para hoy.</p>}
                     </div>
@@ -535,12 +607,12 @@ function Caja() {
                 {carrito.length > 0 && (
                     <ul className="space-y-2">
                         {carrito.map((item) => (
-                            <li key={item.id_producto} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[#F0E9E1] p-3 text-sm">
-                                <span className="min-w-0 flex-1 font-semibold">{item.nombre} × {item.cantidad}</span>
+                            <li key={claveDetalleVenta(item)} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[#F0E9E1] p-3 text-sm">
+                                <span className="min-w-0 flex-1 font-semibold">{item.nombre}{item.segundo_elegido ? ` · Segundo: ${item.segundo_elegido}` : ""} × {item.cantidad}</span>
                                 <span className="flex items-center gap-2">
                                     <b>{importe(item.precio * item.cantidad)}</b>
-                                    <Button type="button" size="sm" variant="secondary" aria-label={`Quitar una unidad de ${item.nombre}`} onClick={() => cambiarCantidad(item.id_producto, -1)}>−</Button>
-                                    <Button type="button" size="sm" variant="secondary" aria-label={`Agregar una unidad de ${item.nombre}`} onClick={() => cambiarCantidad(item.id_producto, 1)} disabled={item.cantidad >= Number(item.stock)}>+</Button>
+                                    <Button type="button" size="sm" variant="secondary" aria-label={`Quitar una unidad de ${item.nombre}`} onClick={() => cambiarCantidad(claveDetalleVenta(item), -1)}>−</Button>
+                                    <Button type="button" size="sm" variant="secondary" aria-label={`Agregar una unidad de ${item.nombre}`} onClick={() => cambiarCantidad(claveDetalleVenta(item), 1)} disabled={inventarioAgotado(item, item.cantidad)}>+</Button>
                                 </span>
                             </li>
                         ))}
@@ -678,9 +750,10 @@ function Caja() {
                         </Alert>
                     )}
                     {detalleAtencionSeleccionada && (
-                        <div className="space-y-3">
+                        <div className="flex flex-wrap gap-3">
                             <Button
                                 variant="warning"
+                                disabled={guardando || Boolean(errorAtencion) || !detalleAtencionSeleccionada}
                                 onClick={() => {
                                     if (mostrarPedidoMesa) setMostrarPedidoMesa(false);
                                     else iniciarPedidoParaAtencion(detalleAtencionSeleccionada.id_atencion);
@@ -688,7 +761,17 @@ function Caja() {
                             >
                                 {mostrarPedidoMesa ? "Cerrar formulario" : "Crear pedido para esta atención"}
                             </Button>
-                            {mostrarPedidoMesa && formularioNuevoPedido}
+                            <Button
+                                variant="outline"
+                                disabled={guardando || Boolean(errorAtencion)}
+                                onClick={() => setAtencionParaCerrar({
+                                    id_atencion: detalleAtencionSeleccionada.id_atencion,
+                                    mesa: detalleAtencionSeleccionada.mesa,
+                                })}
+                            >
+                                Finalizar atención
+                            </Button>
+                            {mostrarPedidoMesa && <div className="w-full">{formularioNuevoPedido}</div>}
                         </div>
                     )}
                 </div>
@@ -1003,6 +1086,17 @@ function Caja() {
                 confirmText="Confirmar cierre"
                 onCancel={() => { if (!guardando) setConfirmarCierre(false); }}
                 onConfirm={cerrarCaja}
+                loading={guardando}
+            />
+            <ConfirmModal
+                open={Boolean(atencionParaCerrar)}
+                title="Finalizar atención de mesa"
+                message={atencionParaCerrar
+                    ? `Se cerrará la atención de la mesa ${atencionParaCerrar.mesa}. La operación verifica pedidos entregados, pagos confirmados, saldo cero y solicitudes pendientes. El cierre de caja no se modifica.`
+                    : ""}
+                confirmText="Finalizar atención"
+                onCancel={() => { if (!guardando) setAtencionParaCerrar(null); }}
+                onConfirm={cerrarAtencion}
                 loading={guardando}
             />
             <ConfirmModal

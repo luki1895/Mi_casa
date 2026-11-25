@@ -53,8 +53,18 @@ function MesaBoard({
     onSelectMesa,
 }) {
     const [filtro, setFiltro] = useState("TODAS");
+    const [sectorFiltro, setSectorFiltro] = useState("TODOS");
     const [busqueda, setBusqueda] = useState("");
 
+    const sectores = useMemo(() => {
+        const unicos = new Map();
+        mesas.forEach((mesa) => {
+            if (mesa.id_sector !== null && mesa.id_sector !== undefined) {
+                unicos.set(String(mesa.id_sector), mesa.sector || `Sector ${mesa.id_sector}`);
+            }
+        });
+        return [...unicos.entries()].sort((a, b) => a[1].localeCompare(b[1], "es"));
+    }, [mesas]);
     const atencionesById = useMemo(
         () => new Map(atenciones.map((atencion) => [Number(atencion.id_atencion), atencion])),
         [atenciones]
@@ -83,9 +93,12 @@ function MesaBoard({
             Boolean(atencionQueryError)
         );
         const coincideEstado = filtro === "TODAS" || estado === filtro;
+        const coincideSector = sectorFiltro === "TODOS"
+            || (sectorFiltro === "SIN_SECTOR" && (mesa.id_sector === null || mesa.id_sector === undefined))
+            || String(mesa.id_sector) === sectorFiltro;
         const coincideBusqueda = String(mesa.numero ?? "").toLocaleLowerCase().includes(busqueda.trim().toLocaleLowerCase());
-        return coincideEstado && coincideBusqueda;
-    }), [atencionesById, atencionQueryError, busqueda, filtro, mesaQueryError, mesas]);
+        return coincideEstado && coincideSector && coincideBusqueda;
+    }), [atencionesById, atencionQueryError, busqueda, filtro, mesaQueryError, mesas, sectorFiltro]);
     const ubicadas = mesasFiltradas.filter(posicionMesaValida);
     const sinUbicar = mesasFiltradas.filter((mesa) => !posicionMesaValida(mesa));
 
@@ -177,6 +190,18 @@ function MesaBoard({
             )}
 
             <div className="flex flex-col gap-3 rounded-xl border border-[#E8DDD1] bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
+                <label className="flex items-center gap-2 text-sm font-semibold text-[#594A3E]">
+                    Sector
+                    <select
+                        value={sectorFiltro}
+                        onChange={(event) => setSectorFiltro(event.target.value)}
+                        className="min-h-10 rounded-lg border border-[#E8DDD1] bg-white px-3 py-2"
+                    >
+                        <option value="TODOS">Todos los sectores</option>
+                        {sectores.map(([id, nombre]) => <option key={id} value={id}>{nombre}</option>)}
+                        <option value="SIN_SECTOR">Sin sector</option>
+                    </select>
+                </label>
                 <div className="flex flex-wrap gap-2" aria-label="Filtrar mesas por estado">
                     {estadosMesa.map((estado) => (
                         <button

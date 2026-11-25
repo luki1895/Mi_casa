@@ -1,25 +1,14 @@
 import pool from "../config/db.js";
 import fechaRestaurante from "../utils/fechaRestaurante.js";
 import produccionModel from "./produccion.model.js";
+import { agruparDetalleVenta, resolverDetalleVenta } from "../utils/detalleVenta.js";
+import { guardarResultado, obtenerReintento, validarSolicitudId } from "../utils/idempotencia.js";
 
 const esImporteMonetarioValido = (importe) => {
     const centavos = Math.round(importe * 100);
     return Number.isFinite(importe)
         && Number.isSafeInteger(centavos)
         && Math.abs(importe * 100 - centavos) < 1e-7;
-};
-
-const agruparProductosSolicitados = (detalle) => {
-    const cantidades = new Map();
-    for (const item of detalle) {
-        const idProducto = Number(item.id_producto);
-        const cantidad = Number(item.cantidad);
-        if (!Number.isInteger(idProducto) || idProducto < 1 || !Number.isInteger(cantidad) || cantidad < 1) {
-            throw Object.assign(new Error("El detalle contiene productos o cantidades inválidas"), { status: 400 });
-        }
-        cantidades.set(idProducto, (cantidades.get(idProducto) || 0) + cantidad);
-    }
-    return Array.from(cantidades, ([id_producto, cantidad]) => ({ id_producto, cantidad }));
 };
 
 const verificarCajaAbierta = async (client, bloquearCierre = false) => {
@@ -90,12 +79,15 @@ const listarPedidosCaja = async () => {
                 COALESCE((SELECT SUM(pg.monto) FROM pago pg WHERE pg.id_pedido=p.id_pedido AND pg.estado='CONFIRMADO'),0) AS pagado_total,
                 COALESCE(json_agg(json_build_object(
                     'id_producto', pr.id_producto, 'nombre', pr.nombre,
-                    'cantidad', dp.cantidad, 'precio', dp.precio, 'subtotal', dp.subtotal
+                    'cantidad', dp.cantidad, 'precio', dp.precio, 'subtotal', dp.subtotal,
+                    'tipo_venta', CASE WHEN dp.id_sopa_componente IS NOT NULL THEN 'ALMUERZO_COMPLETO' ELSE 'PRODUCTO' END,
+                    'id_segundo_elegido', segundo.id_producto, 'segundo_elegido', segundo.nombre
                 )) FILTER (WHERE dp.id_pedido IS NOT NULL), '[]') AS detalle
          FROM pedido p
          INNER JOIN cliente c ON c.id_cliente=p.id_cliente
          LEFT JOIN detalle_pedido dp ON dp.id_pedido=p.id_pedido
          LEFT JOIN producto pr ON pr.id_producto=dp.id_producto
+         LEFT JOIN producto segundo ON segundo.id_producto=dp.id_segundo_componente
          WHERE UPPER(p.estado) NOT LIKE 'CANCEL%'
          GROUP BY p.id_pedido,c.nombre,c.tipo_cliente
          ORDER BY p.fecha DESC, p.id_pedido DESC`
@@ -334,10 +326,22 @@ const cerrarCaja = async (datos, idUsuario) => {
     }
 };
 
-const registrarPago = async (idPedido, datos = {}, idUsuario) => {
+const registrarPago = async (idPedido, datos = {}, idUsuario, solicitudId) => {
+    const clave = validarSolicitudId(solicitudId);
+    const payload = {
+        id_pedido: Number(idPedido),
+        monto: datos?.monto ?? null,
+        recibido: datos?.recibido ?? null,
+        metodo: String(datos?.metodo || "EFECTIVO").toUpperCase(),
+    };
     const client = await pool.connect();
     try {
         await client.query("BEGIN");
+        const reintento = await obtenerReintento(client, idUsuario, clave, "REGISTRAR_PAGO", payload);
+        if (reintento.resultado) {
+            await client.query("COMMIT");
+            return reintento.resultado;
+        }
         await verificarCajaAbierta(client);
         const result = await client.query("SELECT id_pedido,total,pagado,estado FROM pedido WHERE id_pedido=$1 FOR UPDATE", [idPedido]);
         if (!result.rowCount) throw Object.assign(new Error("Pedido no encontrado"), { status: 404 });
@@ -376,8 +380,10 @@ const registrarPago = async (idPedido, datos = {}, idUsuario) => {
             "INSERT INTO bitacora_operaciones (id_usuario,accion,entidad,id_entidad,detalle) VALUES ($1,'COBRAR','pago',$2,$3)",
             [idUsuario, pago.rows[0].id_pago, JSON.stringify({ id_pedido: idPedido, monto, metodo, pagado })]
         );
+        const resultado = { ...pago.rows[0], saldo_pendiente: Math.max(saldo - monto, 0), pedido_pagado: pagado };
+        await guardarResultado(client, idUsuario, reintento, "REGISTRAR_PAGO", resultado);
         await client.query("COMMIT");
-        return { ...pago.rows[0], saldo_pendiente: Math.max(saldo - monto, 0), pedido_pagado: pagado };
+        return resultado;
     } catch (error) {
         await client.query("ROLLBACK");
         throw error;
@@ -386,14 +392,26 @@ const registrarPago = async (idPedido, datos = {}, idUsuario) => {
     }
 };
 
-const agregarDetallePedido = async (idPedido, datos, idUsuario) => {
+const agregarDetallePedido = async (idPedido, datos, idUsuario, solicitudId) => {
     if (!Array.isArray(datos.detalle) || !datos.detalle.length) {
         throw Object.assign(new Error("Agrega al menos un producto al pedido"), { status: 400 });
     }
+    const clave = validarSolicitudId(solicitudId);
+    const solicitados = agruparDetalleVenta(datos.detalle);
+    const payload = {
+        id_pedido: Number(idPedido),
+        detalle: solicitados,
+        observaciones: String(datos.observaciones || "").trim(),
+    };
     const fecha = fechaRestaurante();
     const client = await pool.connect();
     try {
         await client.query("BEGIN");
+        const reintento = await obtenerReintento(client, idUsuario, clave, "AGREGAR_DETALLE_PEDIDO", payload);
+        if (reintento.resultado) {
+            await client.query("COMMIT");
+            return reintento.resultado;
+        }
         await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`menu:${fecha}`]);
         const pedidoResult = await client.query(
             "SELECT id_pedido,total,pagado,estado,observaciones FROM pedido WHERE id_pedido=$1 FOR UPDATE",
@@ -404,19 +422,14 @@ const agregarDetallePedido = async (idPedido, datos, idUsuario) => {
         if (pedido.pagado || String(pedido.estado).toUpperCase() !== "PENDIENTE") {
             throw Object.assign(new Error("Solo se pueden editar pedidos pendientes y aún no pagados"), { status: 409 });
         }
-        const solicitados = agruparProductosSolicitados(datos.detalle);
         const menu = await produccionModel.listarMenu(fecha, client, true);
-        const detalle = solicitados.map(({ id_producto, cantidad }) => {
-            const plato = menu.find((producto) => Number(producto.id_producto) === id_producto);
-            if (!plato || Number(plato.stock) < cantidad) {
-                throw Object.assign(new Error("Cantidad inválida o disponibilidad insuficiente"), { status: 409 });
-            }
-            return { id_producto, nombre: plato.nombre, cantidad, precio: Number(plato.precio), subtotal: Number(plato.precio) * cantidad };
-        });
+        const detalle = resolverDetalleVenta(solicitados, menu);
         for (const item of detalle) {
             await client.query(
-                "INSERT INTO detalle_pedido (id_pedido,id_producto,cantidad,precio,subtotal) VALUES ($1,$2,$3,$4,$5)",
-                [idPedido,item.id_producto,item.cantidad,item.precio,item.subtotal]
+                `INSERT INTO detalle_pedido
+                    (id_pedido,id_producto,cantidad,precio,subtotal,id_sopa_componente,id_segundo_componente)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+                [idPedido,item.id_producto,item.cantidad,item.precio,item.subtotal,item.id_sopa_componente,item.id_segundo_componente]
             );
         }
         const totalAgregado = detalle.reduce((suma, item) => suma + item.subtotal, 0);
@@ -431,8 +444,10 @@ const agregarDetallePedido = async (idPedido, datos, idUsuario) => {
             "INSERT INTO bitacora_operaciones (id_usuario,accion,entidad,id_entidad,detalle) VALUES ($1,'MODIFICAR','pedido',$2,$3)",
             [idUsuario,idPedido,JSON.stringify({ detalle, total_agregado: totalAgregado, observaciones })]
         );
+        const resultado = { id_pedido: Number(idPedido), total_agregado: totalAgregado };
+        await guardarResultado(client, idUsuario, reintento, "AGREGAR_DETALLE_PEDIDO", resultado);
         await client.query("COMMIT");
-        return { id_pedido: Number(idPedido), total_agregado: totalAgregado };
+        return resultado;
     } catch (error) {
         await client.query("ROLLBACK");
         throw error;
@@ -454,14 +469,26 @@ const listarAdicionales = async () => {
     return rows;
 };
 
-const crearAdicional = async (idPedido, datos, idMesero) => {
+const crearAdicional = async (idPedido, datos, idMesero, solicitudId) => {
     if (!Array.isArray(datos.detalle) || !datos.detalle.length) {
         throw Object.assign(new Error("Agrega al menos un producto adicional"), { status: 400 });
     }
+    const clave = validarSolicitudId(solicitudId);
+    const solicitados = agruparDetalleVenta(datos.detalle);
+    const payload = {
+        id_pedido: Number(idPedido),
+        detalle: solicitados,
+        observaciones: String(datos.observaciones || "").trim(),
+    };
     const fecha = fechaRestaurante();
     const client = await pool.connect();
     try {
         await client.query("BEGIN");
+        const reintento = await obtenerReintento(client, idMesero, clave, "CREAR_ADICIONAL", payload);
+        if (reintento.resultado) {
+            await client.query("COMMIT");
+            return reintento.resultado;
+        }
         await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`menu:${fecha}`]);
         await verificarCajaAbierta(client);
         const pedido = await client.query("SELECT id_pedido,estado,pagado FROM pedido WHERE id_pedido=$1 FOR UPDATE", [idPedido]);
@@ -471,15 +498,8 @@ const crearAdicional = async (idPedido, datos, idMesero) => {
         if (!pedido.rows[0].pagado) {
             throw Object.assign(new Error("Los pedidos sin pagar se modifican directamente en el pedido, no como adicional de Caja"), { status: 409 });
         }
-        const solicitados = agruparProductosSolicitados(datos.detalle);
         const menu = await produccionModel.listarMenu(fecha, client, true);
-        const detalle = solicitados.map(({ id_producto, cantidad }) => {
-            const plato = menu.find((producto) => Number(producto.id_producto) === id_producto);
-            if (!plato || Number(plato.stock) < cantidad) {
-                throw Object.assign(new Error("Cantidad inválida o disponibilidad insuficiente"), { status: 409 });
-            }
-            return { id_producto, nombre: plato.nombre, cantidad, precio: Number(plato.precio), subtotal: Number(plato.precio) * cantidad };
-        });
+        const detalle = resolverDetalleVenta(solicitados, menu);
         const total = detalle.reduce((suma, item) => suma + item.subtotal, 0);
         const result = await client.query(
             `INSERT INTO solicitud_adicional (id_pedido,id_mesero,detalle,observaciones,total)
@@ -490,6 +510,7 @@ const crearAdicional = async (idPedido, datos, idMesero) => {
             "INSERT INTO bitacora_operaciones (id_usuario,accion,entidad,id_entidad,detalle) VALUES ($1,'SOLICITAR_ADICIONAL','pedido',$2,$3)",
             [idMesero, idPedido, JSON.stringify({ id_solicitud: result.rows[0].id_solicitud, total, detalle })]
         );
+        await guardarResultado(client, idMesero, reintento, "CREAR_ADICIONAL", result.rows[0]);
         await client.query("COMMIT");
         return result.rows[0];
     } catch (error) {
@@ -500,10 +521,22 @@ const crearAdicional = async (idPedido, datos, idMesero) => {
     }
 };
 
-const cobrarAdicional = async (idSolicitud, datos = {}, idUsuario) => {
+const cobrarAdicional = async (idSolicitud, datos = {}, idUsuario, solicitudId) => {
+    const clave = validarSolicitudId(solicitudId);
+    const metodoSolicitado = String(datos?.metodo || "EFECTIVO").toUpperCase();
+    const payload = {
+        id_solicitud: Number(idSolicitud),
+        recibido: datos?.recibido ?? null,
+        metodo: metodoSolicitado,
+    };
     const client = await pool.connect();
     try {
         await client.query("BEGIN");
+        const reintento = await obtenerReintento(client, idUsuario, clave, "COBRAR_ADICIONAL", payload);
+        if (reintento.resultado) {
+            await client.query("COMMIT");
+            return reintento.resultado;
+        }
         const fecha = fechaRestaurante();
         await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`menu:${fecha}`]);
         await verificarCajaAbierta(client);
@@ -514,7 +547,7 @@ const cobrarAdicional = async (idSolicitud, datos = {}, idUsuario) => {
         const solicitud = solicitudResult.rows[0];
         const recibido = Number(datos?.recibido);
         const total = Number(solicitud.total);
-        const metodo = String(datos?.metodo || "EFECTIVO").toUpperCase();
+        const metodo = metodoSolicitado;
         if (
             !esImporteMonetarioValido(recibido)
             || !esImporteMonetarioValido(total)
@@ -528,8 +561,13 @@ const cobrarAdicional = async (idSolicitud, datos = {}, idUsuario) => {
         );
         for (const item of solicitud.detalle) {
             await client.query(
-                "INSERT INTO detalle_pedido (id_pedido,id_producto,cantidad,precio,subtotal,id_solicitud) VALUES ($1,$2,$3,$4,$5,$6)",
-                [solicitud.id_pedido,item.id_producto,item.cantidad,item.precio,item.subtotal,idSolicitud]
+                `INSERT INTO detalle_pedido
+                    (id_pedido,id_producto,cantidad,precio,subtotal,id_solicitud,id_sopa_componente,id_segundo_componente)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+                [
+                    solicitud.id_pedido,item.id_producto,item.cantidad,item.precio,item.subtotal,idSolicitud,
+                    item.id_sopa_componente || null,item.id_segundo_componente || null,
+                ]
             );
         }
         await client.query("UPDATE pedido SET total=total+$1 WHERE id_pedido=$2", [total,solicitud.id_pedido]);
@@ -545,8 +583,10 @@ const cobrarAdicional = async (idSolicitud, datos = {}, idUsuario) => {
             "INSERT INTO bitacora_operaciones (id_usuario,accion,entidad,id_entidad,detalle) VALUES ($1,'COBRAR_ADICIONAL','solicitud_adicional',$2,$3)",
             [idUsuario,idSolicitud,JSON.stringify({ id_pedido: solicitud.id_pedido, total, id_pago: pago.rows[0].id_pago })]
         );
+        const resultado = { id_pago: pago.rows[0].id_pago, id_pedido: solicitud.id_pedido, total, detalle: solicitud.detalle };
+        await guardarResultado(client, idUsuario, reintento, "COBRAR_ADICIONAL", resultado);
         await client.query("COMMIT");
-        return { id_pago: pago.rows[0].id_pago, id_pedido: solicitud.id_pedido, total, detalle: solicitud.detalle };
+        return resultado;
     } catch (error) {
         await client.query("ROLLBACK");
         throw error;

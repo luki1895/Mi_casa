@@ -65,4 +65,12 @@ export const migrationManifest = Object.freeze({
         ],
         manualOnly: true,
     },
+    [filename("013_operacion_comercial_y_sectores")]: {
+        dependencies: [
+            filename("002_saldos_independientes_pensionados"),
+            filename("005_integral_completion"),
+            filename("011_distribucion_plano_mesas"),
+        ],
+        manualOnly: true,
+    },
 });

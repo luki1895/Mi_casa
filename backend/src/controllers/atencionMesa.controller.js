@@ -8,14 +8,14 @@ const manejarError = (res, error) => {
         return response.error(res, mensajeErrorConexion(error), 503);
     }
     if (["42P01", "42703"].includes(error.code)) {
-        return response.error(res, "El esquema de mesas no está actualizado. Revisa las migraciones 006_mesas_atenciones.sql, 010_configuracion_mesas.sql y 011_distribucion_plano_mesas.sql.", 503);
+        return response.error(res, "El esquema de mesas no está actualizado. Revisa las migraciones 006_mesas_atenciones.sql, 010_configuracion_mesas.sql, 011_distribucion_plano_mesas.sql y 013_operacion_comercial_y_sectores.sql.", 503);
     }
     console.error("Error en el módulo de mesas:", error);
     return response.error(res, "Error interno del servidor al gestionar mesas y atenciones.", 500);
 };
 
-export const listarMesas = async (_req, res) => {
-    try { response.ok(res, await atencionMesaService.listarMesas()); }
+export const listarMesas = async (req, res) => {
+    try { response.ok(res, await atencionMesaService.listarMesas(req.query.sector)); }
     catch (error) { manejarError(res, error); }
 };
 
@@ -36,6 +36,11 @@ export const actualizarMesa = async (req, res) => {
 
 export const listarSectores = async (_req, res) => {
     try { response.ok(res, await atencionMesaService.listarSectores()); }
+    catch (error) { manejarError(res, error); }
+};
+
+export const listarSectoresConfiguracion = async (_req, res) => {
+    try { response.ok(res, await atencionMesaService.listarSectoresConfiguracion()); }
     catch (error) { manejarError(res, error); }
 };
 

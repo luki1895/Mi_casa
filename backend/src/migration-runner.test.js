@@ -187,6 +187,25 @@ test("012 prepares employee-role retirement after mesa migrations and stays manu
     );
 });
 
+test("013 prepares commercial rules and sector activation as a manual pending migration", () => {
+    const migration = byFilename.get("013_operacion_comercial_y_sectores.sql");
+    assert.deepEqual(migration.dependencies, [
+        "002_saldos_independientes_pensionados.sql",
+        "005_integral_completion.sql",
+        "011_distribucion_plano_mesas.sql",
+    ]);
+    assert.equal(migration.manualOnly, true);
+    assert.throws(
+        () => planSingleMigration({
+            migrations,
+            appliedByName: appliedThrough002,
+            targetFilename: migration.filename,
+            confirmationChecksum: migration.checksum,
+        }),
+        /es manual y está bloqueada/,
+    );
+});
+
 test("execution applies and records only the confirmed file in one transaction", async () => {
     const statements = [];
     const client = {

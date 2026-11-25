@@ -21,9 +21,16 @@ test("mantiene reservado el stock pendiente aunque caduque el enlace privado", a
     let consultaMenu;
     context.mock.method(pool, "query", async (sql) => {
         if (String(sql).includes("information_schema.columns")) {
-            return { rows: [{ tiene_imagen: true, tiene_reservas_platos: true }] };
+            return { rows: [{
+                tiene_imagen: true,
+                tiene_reservas_platos: true,
+                tiene_precios: true,
+                tiene_producto_codigo: true,
+                tiene_componentes_completo: true,
+                tiene_movimientos_pensionados: true,
+            }] };
         }
-        consultaMenu = String(sql);
+        if (String(sql).includes("WITH menu AS")) consultaMenu = String(sql);
         return { rows: [] };
     });
 
@@ -34,5 +41,6 @@ test("mantiene reservado el stock pendiente aunque caduque el enlace privado", a
     assert.match(consultaMenu, /GROUP BY id_producto, categoria/);
     assert.match(consultaMenu, /rp\.estado = 'PENDIENTE'/);
     assert.match(consultaMenu, /rp\.id_pedido IS NULL/);
+    assert.match(consultaMenu, /mp\.tipo_movimiento='CONSUMO'/);
     assert.doesNotMatch(consultaMenu, /codigo_expira_en|codigo_revocado_en/);
 });
